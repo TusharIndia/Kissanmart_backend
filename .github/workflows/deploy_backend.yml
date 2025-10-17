@@ -34,6 +34,7 @@ jobs:
             pip install -r requirements.txt
 
             echo "🌿 Updating environment variables..."
+            cd ${{ secrets.VPS_PATH }}/Kissanmart_backend/kissanmart
             cat > .env <<EOF
             # OAuth / Social
             GOOGLE_OAUTH2_CLIENT_ID=${{ secrets.GOOGLE_OAUTH2_CLIENT_ID }}
@@ -70,6 +71,9 @@ jobs:
             SHIPROCKET_API_PASSWORD=${{ secrets.SHIPROCKET_API_PASSWORD }}
             EOF
 
+            echo "⚙ back to main folder ..."
+            cd ..
+            
             echo "⚙ Running migrations..."
             python manage.py migrate --noinput
 
@@ -77,7 +81,7 @@ jobs:
             python manage.py collectstatic --noinput
 
             echo "🔁 Restarting Gunicorn service..."
-            sudo systemctl restart kissanmart
+            sudo systemctl restart kissanmart_backend
 
             echo "🔁 Restarting Nginx service..."
             sudo systemctl restart nginx
