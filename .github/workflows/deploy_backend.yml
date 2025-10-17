@@ -24,6 +24,7 @@ jobs:
             cd ${{ secrets.VPS_PATH }}/Kissanmart_backend
 
             echo "📦 Pulling latest changes from GitHub..."
+            git reset --hard
             git pull origin main
 
             echo "🐍 Activating virtual environment..."
