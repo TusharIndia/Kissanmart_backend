@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError as DjangoValidationError
-from ..models import CustomUser, OTP
+from ..models import CustomUser, OTP, ContactQuery
 import re
 
 
@@ -309,3 +309,44 @@ class UserListSerializer(serializers.ModelSerializer):
             'registration_method', 'is_mobile_verified', 'is_profile_complete', 
             'is_active', 'city', 'state', 'created_at'
         ]
+
+
+class ContactQuerySerializer(serializers.ModelSerializer):
+    """Serializer for contact queries from visitors"""
+    
+    class Meta:
+        model = ContactQuery
+        fields = ['name', 'email', 'message']
+    
+    def validate_name(self, value):
+        """Validate name field"""
+        if len(value.strip()) < 2:
+            raise serializers.ValidationError("Name must be at least 2 characters long")
+        if len(value.strip()) > 255:
+            raise serializers.ValidationError("Name must be less than 255 characters")
+        return value.strip()
+    
+    def validate_email(self, value):
+        """Validate email field"""
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, value):
+            raise serializers.ValidationError("Please enter a valid email address")
+        return value.lower()
+    
+    def validate_message(self, value):
+        """Validate message field"""
+        if len(value.strip()) < 10:
+            raise serializers.ValidationError("Message must be at least 10 characters long")
+        if len(value.strip()) > 2000:
+            raise serializers.ValidationError("Message must be less than 2000 characters")
+        return value.strip()
+
+
+class ContactQueryListSerializer(serializers.ModelSerializer):
+    """Serializer for listing contact queries (admin view)"""
+    
+    class Meta:
+        model = ContactQuery
+        fields = ['id', 'name', 'email', 'message', 'created_at', 'ip_address']
+        read_only_fields = ['id', 'created_at', 'ip_address']

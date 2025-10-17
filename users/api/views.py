@@ -32,7 +32,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from django.conf import settings
 
-from ..models import CustomUser, OTP, UserSession
+from ..models import CustomUser, OTP, UserSession, ContactQuery
 from .serializers_new import (
     PhoneRegistrationSerializer,
     ProfileCompletionSerializer,
@@ -40,7 +40,9 @@ from .serializers_new import (
     OTPVerificationSerializer,
     PhoneLoginSerializer,
     UserProfileSerializer,
-    UserListSerializer
+    UserListSerializer,
+    ContactQuerySerializer,
+    ContactQueryListSerializer
 )
 from drf_spectacular.utils import extend_schema
 
@@ -1018,3 +1020,88 @@ def weather_view(request):
     except requests.RequestException as e:
         logger.exception('Weather API request failed')
         return Response({'success': False, 'message': 'Failed to fetch weather', 'error': str(e)}, status=502)
+
+
+# CONTACT QUERY APIS
+@extend_schema(request=ContactQuerySerializer, responses={201: dict})
+class ContactQueryCreateView(APIView):
+    """API for visitors to submit contact queries"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        serializer = ContactQuerySerializer(data=request.data)
+        
+        if serializer.is_valid():
+            # Get IP address from request
+            def get_client_ip(request):
+                x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+                if x_forwarded_for:
+                    ip = x_forwarded_for.split(',')[0]
+                else:
+                    ip = request.META.get('REMOTE_ADDR')
+                return ip
+            
+            contact_query = serializer.save(ip_address=get_client_ip(request))
+            
+            return Response({
+                'success': True,
+                'message': 'Your query has been submitted successfully. We will get back to you soon!',
+                'query_id': contact_query.id
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminPermissionMixin:
+    """Mixin to check X-Admin-Token header for admin authentication"""
+
+    def check_admin(self, request):
+        import base64
+        from django.conf import settings
+        
+        header_token = request.headers.get('X-Admin-Token') or request.META.get('HTTP_X_ADMIN_TOKEN')
+        if not header_token:
+            # also support Authorization: Basic <base64>
+            auth = request.headers.get('Authorization') or request.META.get('HTTP_AUTHORIZATION', '')
+            if auth.startswith('Basic '):
+                header_token = auth.split(' ', 1)[1].strip()
+
+        if not header_token:
+            return False
+
+        expected_user = getattr(settings, 'ADMIN_USERNAME', None)
+        expected_pass = getattr(settings, 'ADMIN_PASSWORD', None)
+        if not expected_user or not expected_pass:
+            return False
+        
+        # Create expected token
+        raw = f"{expected_user}:{expected_pass}".encode('utf-8')
+        expected = base64.b64encode(raw).decode('utf-8')
+        return header_token == expected
+
+
+@extend_schema(responses={200: ContactQueryListSerializer(many=True)})
+class ContactQueryListView(AdminPermissionMixin, APIView):
+    """API for admin to view all contact queries"""
+    permission_classes = [AllowAny]
+    
+    def dispatch(self, request, *args, **kwargs):
+        if not self.check_admin(request):
+            return Response({
+                'success': False, 
+                'message': 'Admin authentication required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get(self, request, *args, **kwargs):
+        queries = ContactQuery.objects.all().order_by('-created_at')
+        serializer = ContactQueryListSerializer(queries, many=True)
+        
+        return Response({
+            'success': True,
+            'message': f'Found {len(serializer.data)} contact queries',
+            'queries': serializer.data
+        }, status=status.HTTP_200_OK)

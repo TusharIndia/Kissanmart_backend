@@ -17,6 +17,9 @@ from .api.views import (
     , weather_view
     , LinkSocialView
     
+    # Contact Query
+    , ContactQueryCreateView, ContactQueryListView
+    
 )
 
 app_name = 'users'
@@ -45,6 +48,11 @@ urlpatterns = [
     path('check-user/', CheckUserExistsView.as_view(), name='check_user'),
     path('statistics/', user_statistics, name='statistics'),
     path('weather/', weather_view, name='weather'),
+    
+    # CONTACT QUERY ENDPOINTS
+    path('contact/', ContactQueryCreateView.as_view(), name='contact_create'),
+    path('contact/queries/', ContactQueryListView.as_view(), name='contact_list'),
+    
     # OAuth endpoints used by frontend
     path('auth/oauth/callback/', csrf_exempt(OAuthCallbackView.as_view()), name='oauth_callback'),
     path('auth/oauth/token/', csrf_exempt(OAuthTokenView.as_view()), name='oauth_token'),

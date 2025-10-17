@@ -197,3 +197,20 @@ class AdminActionLog(models.Model):
 
     def __str__(self):
         return f"{self.action} by {self.admin_username} on {self.user.get_identifier()} at {self.created_at}"
+
+
+class ContactQuery(models.Model):
+    """Store contact queries from visitors."""
+    name = models.CharField(max_length=255)
+    email = models.EmailField()
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Contact Query'
+        verbose_name_plural = 'Contact Queries'
+    
+    def __str__(self):
+        return f"Query from {self.name} ({self.email}) - {self.created_at.strftime('%Y-%m-%d %H:%M')}"

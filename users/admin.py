@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, OTP, UserSession
+from .models import CustomUser, OTP, UserSession, ContactQuery
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
@@ -72,3 +72,27 @@ class UserSessionAdmin(admin.ModelAdmin):
         return obj.is_expired()
     is_expired_display.short_description = 'Is Expired'
     is_expired_display.boolean = True
+
+
+@admin.register(ContactQuery)
+class ContactQueryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'email', 'created_at', 'ip_address', 'message_preview')
+    list_filter = ('created_at',)
+    search_fields = ('name', 'email', 'message')
+    ordering = ('-created_at',)
+    readonly_fields = ('created_at', 'ip_address')
+    
+    def message_preview(self, obj):
+        """Show first 50 characters of message"""
+        if len(obj.message) > 50:
+            return f"{obj.message[:50]}..."
+        return obj.message
+    message_preview.short_description = 'Message Preview'
+    
+    def has_change_permission(self, request, obj=None):
+        """Make contact queries read-only"""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Allow admin to delete queries if needed"""
+        return request.user.is_superuser
