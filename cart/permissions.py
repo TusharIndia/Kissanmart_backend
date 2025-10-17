@@ -11,7 +11,7 @@ class IsSmartBuyer(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        # Check if user is a smart_buyer
+        # Check if user is a smart_buyer ok
         return request.user.user_type == 'smart_buyer'
     
     message = "Cart access is only available for Smart Buyer users."
