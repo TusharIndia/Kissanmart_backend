@@ -1025,7 +1025,7 @@ def weather_view(request):
 # CONTACT QUERY APIS
 @extend_schema(request=ContactQuerySerializer, responses={201: dict})
 class ContactQueryCreateView(APIView):
-    """API for visitors to submit contact queries"""
+    """API for visitors to submit contact queries and """
     permission_classes = [AllowAny]
     
     def post(self, request):
