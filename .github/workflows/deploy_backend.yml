@@ -75,8 +75,8 @@ jobs:
             cd ..
             
             echo "⚙ Running migrations..."
-            python manage.py makemigrations --noinput
-            python manage.py migrate --noinput
+            python manage.py makemigrations 
+            python manage.py migrate 
 
             echo "🧹 Collecting static files..."
             python manage.py collectstatic --noinput
