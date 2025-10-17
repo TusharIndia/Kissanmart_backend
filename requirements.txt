@@ -21,3 +21,4 @@ boto3>=1.28.0
 django-storages>=1.14.0
 awsgi==0.0.5
 razorpay>=1.4.0
+Shiprocket-sdk

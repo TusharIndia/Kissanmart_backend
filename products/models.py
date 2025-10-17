@@ -68,7 +68,7 @@ class Product(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True, help_text="City where the product is located")
-    pincode = models.CharField(max_length=20, blank=True, null=True)
+    pincode = models.CharField(max_length=20, blank=False, null=False, help_text="Pincode where the product is located")
     
     # 4. Target Buyers
     target_mandi_owners = models.BooleanField(default=False, help_text="Target Mandi Owners/Wholesalers.")

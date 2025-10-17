@@ -1,0 +1,85 @@
+name: 🚀 Deploy Django Backend
+
+on:
+  push:
+    branches:
+      - main  # Trigger deployment on push to main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (for workflow context)
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_PRIVATE_KEY }}
+          script: |
+            echo "🔹 Navigating to backend repo..."
+            cd ${{ secrets.VPS_PATH }}/Kissanmart_backend
+
+            echo "📦 Pulling latest changes from GitHub..."
+            git reset --hard
+            git pull origin main
+
+            echo "🐍 Activating virtual environment..."
+            source venv/bin/activate
+
+            echo "📦 Installing/updating requirements..."
+            pip install -r requirements.txt
+
+            echo "🌿 Updating environment variables..."
+            cat > .env <<EOF
+            # OAuth / Social
+            GOOGLE_OAUTH2_CLIENT_ID=${{ secrets.GOOGLE_OAUTH2_CLIENT_ID }}
+            GOOGLE_OAUTH2_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH2_CLIENT_SECRET }}
+            FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}
+            FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}
+
+            # Admin
+            ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME }}
+            ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+
+            # MSG91 / OTP
+            OTP_URL=${{ secrets.OTP_URL }}
+            FLOW_ID=${{ secrets.FLOW_ID }}
+            SENDER_ID=${{ secrets.SENDER_ID }}
+            AUTH_KEY=${{ secrets.AUTH_KEY }}
+
+            # Database (individual pieces kept in original .env)
+            DATABASE_NAME=${{ secrets.DATABASE_NAME }}
+            DATABASE_USER=${{ secrets.DATABASE_USER }}
+            DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}
+            DATABASE_HOST=${{ secrets.DATABASE_HOST }}
+            DATABASE_PORT=${{ secrets.DATABASE_PORT }}
+
+            # Misc API keys
+            MANDI_API_KEY=${{ secrets.MANDI_API_KEY }}
+            RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
+            RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}
+            WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}
+            PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}
+
+            # Shiprocket
+            SHIPROCKET_API_EMAIL=${{ secrets.SHIPROCKET_API_EMAIL }}
+            SHIPROCKET_API_PASSWORD=${{ secrets.SHIPROCKET_API_PASSWORD }}
+            EOF
+
+            echo "⚙ Running migrations..."
+            python manage.py migrate --noinput
+
+            echo "🧹 Collecting static files..."
+            python manage.py collectstatic --noinput
+
+            echo "🔁 Restarting Gunicorn service..."
+            sudo systemctl restart kissanmart
+
+            echo "🔁 Restarting Nginx service..."
+            sudo systemctl restart nginx
+
+            echo "✅ Deployment completed successfully!"

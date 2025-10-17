@@ -132,6 +132,33 @@ class AddToCartSerializer(serializers.Serializer):
             user = self.context['request'].user
             cart, _ = Cart.objects.get_or_create(user=user)
             
+            # Ensure pincode is present on the new product
+            new_pin = (product.pincode or '').strip()
+            if not new_pin:
+                raise serializers.ValidationError({
+                    'product_id': 'Product must include a pincode.'
+                })
+
+            # Ensure all existing items in cart are from the same seller and same pincode
+            existing_items = cart.items.select_related('product')
+            for item in existing_items:
+                existing_product = item.product
+                # Compare seller
+                if existing_product.seller_id != product.seller_id:
+                    raise serializers.ValidationError({
+                        'product_id': 'All items in cart must be from the same seller.'
+                    })
+                # Require existing product to have pincode and match it exactly
+                ex_pin = (existing_product.pincode or '').strip()
+                if not ex_pin:
+                    raise serializers.ValidationError({
+                        'product_id': 'Existing cart product missing pincode; cannot add new item.'
+                    })
+                if ex_pin != new_pin:
+                    raise serializers.ValidationError({
+                        'product_id': 'All items in cart must have the same pincode.'
+                    })
+
             existing_item = cart.items.filter(product=product).first()
             total_quantity = quantity
             if existing_item:
@@ -164,6 +191,19 @@ class AddToCartSerializer(serializers.Serializer):
         quantity = validated_data['quantity']
         
         cart, _ = Cart.objects.get_or_create(user=user)
+        # Double-check enforcement at creation time in case cart changed since validation
+        new_pin = (product.pincode or '').strip()
+        if not new_pin:
+            raise serializers.ValidationError('Product must include a pincode.')
+        for item in cart.items.select_related('product'):
+            ex = item.product
+            if ex.seller_id != product.seller_id:
+                raise serializers.ValidationError('All items in cart must be from the same seller.')
+            ex_pin = (ex.pincode or '').strip()
+            if not ex_pin:
+                raise serializers.ValidationError('Existing cart product missing pincode; cannot add new item.')
+            if ex_pin != new_pin:
+                raise serializers.ValidationError('All items in cart must have the same pincode.')
         
         # Check if item already exists in cart
         cart_item, created = CartItem.objects.get_or_create(
