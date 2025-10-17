@@ -182,6 +182,7 @@ class AdminActionLog(models.Model):
     ACTION_CHOICES = [
         ('view', 'View'),
         ('suspend', 'Suspend'),
+        ('unsuspend', 'Unsuspend'),
         ('delete', 'Delete'),
         ('other', 'Other'),
     ]

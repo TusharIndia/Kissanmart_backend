@@ -149,12 +149,10 @@ class AdminUserRetrieveUpdateDelete(AdminPermissionMixin, APIView):
 
     # Additional admin-only actions
     def post_suspend(self, request, id):
-        # Suspend (deactivate) a user
+        # Toggle suspend/unsuspend a user
         user = self.get_object(id)
-        if not user.is_active:
-            return Response({'success': False, 'message': 'User already suspended'}, status=status.HTTP_400_BAD_REQUEST)
-        user.is_active = False
-        user.save()
+        
+        # Get admin username for logging
         admin_user = None
         auth = request.headers.get('Authorization') or request.META.get('HTTP_AUTHORIZATION', '')
         if auth.startswith('Basic '):
@@ -165,8 +163,30 @@ class AdminUserRetrieveUpdateDelete(AdminPermissionMixin, APIView):
                 admin_user = raw.split(':', 1)[0]
             except Exception:
                 admin_user = None
-        AdminActionLog.objects.create(admin_username=admin_user, user=user, action='suspend', details='Suspended by admin')
-        return Response({'success': True, 'message': 'User suspended'})
+        
+        # Toggle user active status
+        if user.is_active:
+            # User is currently active, suspend them
+            user.is_active = False
+            user.save()
+            AdminActionLog.objects.create(
+                admin_username=admin_user, 
+                user=user, 
+                action='suspend', 
+                details='Suspended by admin'
+            )
+            return Response({'success': True, 'message': 'User suspended'})
+        else:
+            # User is currently suspended, unsuspend them
+            user.is_active = True
+            user.save()
+            AdminActionLog.objects.create(
+                admin_username=admin_user, 
+                user=user, 
+                action='unsuspend', 
+                details='Unsuspended by admin'
+            )
+            return Response({'success': True, 'message': 'User unsuspended'})
 
     def get_logs(self, request, id):
         # Return admin action logs for a user
@@ -187,10 +207,8 @@ class AdminUserSuspendView(AdminPermissionMixin, APIView):
 
     def post(self, request, id):
         user = get_object_or_404(CustomUser, pk=id)
-        if not user.is_active:
-            return Response({'success': False, 'message': 'User already suspended'}, status=status.HTTP_400_BAD_REQUEST)
-        user.is_active = False
-        user.save()
+        
+        # Get admin username for logging
         admin_user = None
         auth = request.headers.get('Authorization') or request.META.get('HTTP_AUTHORIZATION', '')
         if auth.startswith('Basic '):
@@ -200,8 +218,30 @@ class AdminUserSuspendView(AdminPermissionMixin, APIView):
                 admin_user = raw.split(':', 1)[0]
             except Exception:
                 admin_user = None
-        AdminActionLog.objects.create(admin_username=admin_user, user=user, action='suspend', details='Suspended by admin')
-        return Response({'success': True, 'message': 'User suspended'})
+        
+        # Toggle user active status
+        if user.is_active:
+            # User is currently active, suspend them
+            user.is_active = False
+            user.save()
+            AdminActionLog.objects.create(
+                admin_username=admin_user, 
+                user=user, 
+                action='suspend', 
+                details='Suspended by admin'
+            )
+            return Response({'success': True, 'message': 'User suspended'})
+        else:
+            # User is currently suspended, unsuspend them
+            user.is_active = True
+            user.save()
+            AdminActionLog.objects.create(
+                admin_username=admin_user, 
+                user=user, 
+                action='unsuspend', 
+                details='Unsuspended by admin'
+            )
+            return Response({'success': True, 'message': 'User unsuspended'})
 
 
 @extend_schema(responses={200: dict})
