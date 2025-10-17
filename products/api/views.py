@@ -108,8 +108,9 @@ def add_product(request):
     if serializer.is_valid():
         product = serializer.save(seller=request.user)
         
-        # Fetch and store Pexels image URL if not already exists
-        if pexels_service.is_configured() and not product.pexels_image_url:
+        # Only fetch Pexels image if user didn't provide their own image URL
+        user_provided_image = 'pexelsImageUrl' in data and data.get('pexelsImageUrl')
+        if not user_provided_image and pexels_service.is_configured() and not product.pexels_image_url:
             try:
                 pexels_service.get_or_fetch_product_image(product)
             except Exception as e:
@@ -165,6 +166,9 @@ def update_product(request, uuid):
 
     serializer = ProductUpdateSerializer(product, data=data, partial=True)
     if serializer.is_valid():
+        # Check if user provided an image URL
+        user_provided_image = 'pexelsImageUrl' in data
+        
         # Check if title or category was updated - if so, might need new image
         title_changed = 'title' in data and data.get('title') != product.title
         
@@ -180,21 +184,23 @@ def update_product(request, uuid):
         # Save the product first
         product = serializer.save()
         
-        # Only fetch new image if title/category changed AND we don't want to lose existing image
-        # Instead of clearing the image, only fetch new one if there's no existing image
-        if pexels_service.is_configured() and (title_changed or category_changed) and not product.pexels_image_url:
-            try:
-                pexels_service.get_or_fetch_product_image(product)
-            except Exception as e:
-                # Log error but don't fail the product update
-                logger.error(f"Error fetching Pexels image for product {product.title}: {e}")
-        elif pexels_service.is_configured() and not product.pexels_image_url:
-            # If no image exists, try to fetch one regardless of changes
-            try:
-                pexels_service.get_or_fetch_product_image(product)
-            except Exception as e:
-                # Log error but don't fail the product update
-                logger.error(f"Error fetching Pexels image for product {product.title}: {e}")
+        # Only fetch new image from Pexels if:
+        # 1. User did not provide their own image URL, AND
+        # 2. Either title/category changed OR no image exists
+        if not user_provided_image and pexels_service.is_configured():
+            if (title_changed or category_changed) and not product.pexels_image_url:
+                try:
+                    pexels_service.get_or_fetch_product_image(product)
+                except Exception as e:
+                    # Log error but don't fail the product update
+                    logger.error(f"Error fetching Pexels image for product {product.title}: {e}")
+            elif not product.pexels_image_url:
+                # If no image exists, try to fetch one regardless of changes
+                try:
+                    pexels_service.get_or_fetch_product_image(product)
+                except Exception as e:
+                    # Log error but don't fail the product update
+                    logger.error(f"Error fetching Pexels image for product {product.title}: {e}")
         
         return Response(ProductListSerializer(product).data)
 

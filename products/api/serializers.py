@@ -252,6 +252,8 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     priceType = serializers.CharField(write_only=True, required=False)
     # allow null when clients send null for non-market_linked price types
     marketPriceSource = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
+    # Allow users to provide their own image URL that will be stored in pexels_image_url field
+    pexelsImageUrl = serializers.URLField(write_only=True, required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Product
@@ -260,7 +262,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             'available_quantity', 'availableQuantity', 'quantity_unit', 'quantityUnit',
             'price_per_unit', 'pricePerUnit', 'price_currency', 'priceCurrency',
             'price_type', 'priceType', 'market_price_source', 'marketPriceSource',
-            'location', 'buyerCategoryVisibility', 'images', 'metadata'
+            'location', 'buyerCategoryVisibility', 'images', 'metadata', 'pexelsImageUrl'
         ]
         extra_kwargs = {
             'price_type': {'required': False},
@@ -331,6 +333,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         images = validated_data.pop('images', [])
         location = validated_data.pop('location', {})
         buyer_visibility = validated_data.pop('buyerCategoryVisibility', None)
+        user_image_url = validated_data.pop('pexelsImageUrl', None)
 
         # Normalize fields and map aliases
         # Map camelCase to snake_case where user may have passed camelCase
@@ -410,6 +413,11 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         product.pincode = location.get('pincode')
         if buyer_visibility is not None:
             product.buyer_category_visibility = buyer_visibility
+        
+        # Handle user-provided image URL
+        if user_image_url and user_image_url.strip():
+            product.pexels_image_url = user_image_url.strip()
+        
         product.save()
 
         # Create images. Support two types for each entry:
@@ -440,6 +448,8 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
     priceCurrency = serializers.CharField(write_only=True, required=False)
     priceType = serializers.CharField(write_only=True, required=False)
     marketPriceSource = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
+    # Allow users to provide their own image URL that will be stored in pexels_image_url field
+    pexelsImageUrl = serializers.URLField(write_only=True, required=False, allow_blank=True, allow_null=True)
     # Make title read-only here so frontend edit modal changing category does not accidentally
     # modify title — we want category to be editable via PUT/PATCH instead of title.
     title = serializers.CharField(read_only=True)
@@ -452,7 +462,8 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
             'available_quantity', 'availableQuantity', 'quantity_unit', 'quantityUnit',
             'price_per_unit', 'pricePerUnit', 'price_currency', 'priceCurrency',
             'price_type', 'priceType', 'market_price_source', 'marketPriceSource',
-            'location', 'buyerCategoryVisibility', 'images', 'metadata', 'status'
+            'location', 'buyerCategoryVisibility', 'images', 'metadata', 'status',
+            'pexelsImageUrl', 'quantity_available'
         ]
 
     def validate(self, data):
@@ -461,6 +472,23 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
         market_source = data.get('market_price_source') or data.get('marketPriceSource')
         if price_type == 'market_linked' and not market_source:
             raise serializers.ValidationError({'marketPriceSource': 'required when priceType is market_linked'})
+        
+        # Validate quantity fields if provided
+        aq = data.get('available_quantity') or data.get('availableQuantity')
+        if aq is not None:
+            try:
+                if float(aq) < 0:
+                    raise serializers.ValidationError({'availableQuantity': 'Available quantity must be >= 0'})
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'availableQuantity': 'Invalid number format'})
+
+        pp = data.get('price_per_unit') or data.get('pricePerUnit')
+        if pp is not None:
+            try:
+                if float(pp) < 0:
+                    raise serializers.ValidationError({'pricePerUnit': 'Price per unit must be >= 0'})
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'pricePerUnit': 'Invalid number format'})
         
         # Validate category - convert category name to Category instance
         category_name = data.get('category')
@@ -477,6 +505,7 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
         images = validated_data.pop('images', None)
         location = validated_data.pop('location', None)
         buyer_visibility = validated_data.pop('buyerCategoryVisibility', None)
+        user_image_url = validated_data.pop('pexelsImageUrl', None)
 
         # map camelCase aliases
         if 'availableQuantity' in validated_data:
@@ -491,6 +520,13 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
             validated_data['price_type'] = validated_data.pop('priceType')
         if 'marketPriceSource' in validated_data:
             validated_data['market_price_source'] = validated_data.pop('marketPriceSource')
+        
+        # Handle user-provided image URL
+        if user_image_url is not None:
+            if user_image_url.strip():  # If URL is provided
+                validated_data['pexels_image_url'] = user_image_url.strip()
+            else:  # If empty string or null, clear the field
+                validated_data['pexels_image_url'] = None
 
         # If the incoming data used quintals as unit, normalize and convert quantities/prices to KG
         unit_val = validated_data.get('unit')
