@@ -9,7 +9,7 @@ from decimal import Decimal
 import logging
 
 from ..models import Order, OrderStatusHistory
-from services.shiprocket import shiprocket_service, ShiprocketAPIError
+from services.shiprocket import get_shiprocket_service, ShiprocketAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class CourierServiceabilityView(APIView):
             courier_type = request.data.get('courier_type', 1)
             
             # Check serviceability
-            serviceability = shiprocket_service.check_serviceability(
+            serviceability = get_shiprocket_service().check_serviceability(
                 pickup_postcode=pickup_postcode,
                 delivery_postcode=delivery_postcode,
                 weight=weight,
@@ -222,7 +222,7 @@ class CreateShiprocketOrderView(APIView):
             
             with transaction.atomic():
                 # Create order in Shiprocket
-                shiprocket_response = shiprocket_service.create_order(shiprocket_order_data)
+                shiprocket_response = get_shiprocket_service().create_order(shiprocket_order_data)
                 
                 if not shiprocket_response['success']:
                     return Response({
@@ -241,7 +241,7 @@ class CreateShiprocketOrderView(APIView):
                 # Now assign courier
                 if shiprocket_response['shipment_id']:
                     try:
-                        courier_response = shiprocket_service.assign_courier(
+                        courier_response = get_shiprocket_service().assign_courier(
                             shipment_id=int(shiprocket_response['shipment_id']),
                             courier_company_id=int(courier_company_id)
                         )
@@ -315,7 +315,7 @@ class TrackShiprocketOrderView(APIView):
                 }, status=status.HTTP_404_NOT_FOUND)
             
             # Get tracking information from Shiprocket
-            tracking_info = shiprocket_service.track_order(awb_code=order.shiprocket_awb_code)
+            tracking_info = get_shiprocket_service().track_order(awb_code=order.shiprocket_awb_code)
             
             if not tracking_info['success']:
                 return Response({
@@ -388,7 +388,7 @@ class CancelShiprocketOrderView(APIView):
             
             with transaction.atomic():
                 # Cancel in Shiprocket
-                cancel_response = shiprocket_service.cancel_order([int(order.shiprocket_order_id)])
+                cancel_response = get_shiprocket_service().cancel_order([int(order.shiprocket_order_id)])
                 
                 if cancel_response['success']:
                     # Update local order status
@@ -473,7 +473,7 @@ class ShippingCalculatorView(APIView):
             weight = float(request.data['weight'])
             cod = request.data.get('cod', False)
             
-            shipping_info = shiprocket_service.calculate_shipping_charges(
+            shipping_info = get_shiprocket_service().calculate_shipping_charges(
                 pickup_postcode=pickup_postcode,
                 delivery_postcode=delivery_postcode,
                 weight=weight,
@@ -570,7 +570,7 @@ class OrderShippingCalculatorView(APIView):
             is_cod = order.payment_method == 'cod'
             
             # Get shipping options
-            shipping_info = shiprocket_service.calculate_shipping_charges(
+            shipping_info = get_shiprocket_service().calculate_shipping_charges(
                 pickup_postcode=pickup_postcode,
                 delivery_postcode=delivery_postcode,
                 weight=float(total_weight),
@@ -653,7 +653,7 @@ def pickup_locations(request):
     Get available pickup locations
     """
     try:
-        locations = shiprocket_service.get_pickup_locations()
+        locations = get_shiprocket_service().get_pickup_locations()
         
         return Response({
             'success': True,

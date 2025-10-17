@@ -252,8 +252,8 @@ class CancelOrderView(APIView):
                     # Cancel in Shiprocket if order exists there
                     if order.shiprocket_order_id:
                         try:
-                            from services.shiprocket import shiprocket_service
-                            cancel_response = shiprocket_service.cancel_order([int(order.shiprocket_order_id)])
+                            from services.shiprocket import get_shiprocket_service
+                            cancel_response = get_shiprocket_service().cancel_order([int(order.shiprocket_order_id)])
                             
                             if cancel_response['success']:
                                 shiprocket_cancelled = True

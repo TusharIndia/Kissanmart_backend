@@ -30,7 +30,12 @@ class ShiprocketService:
         self.password = getattr(settings, 'SHIPROCKET_API_PASSWORD', None)
         
         if not self.email or not self.password:
-            raise ShiprocketAPIError("Shiprocket credentials not configured in settings")
+            missing = []
+            if not self.email:
+                missing.append('SHIPROCKET_API_EMAIL')
+            if not self.password:
+                missing.append('SHIPROCKET_API_PASSWORD')
+            raise ShiprocketAPIError(f"Shiprocket credentials not configured in settings: {', '.join(missing)}")
         
         self._token = None
     
@@ -464,5 +469,21 @@ class ShiprocketService:
             raise ShiprocketAPIError(f"Failed to calculate shipping charges: {str(e)}")
 
 
-# Singleton instance
-shiprocket_service = ShiprocketService()
+# Singleton instance with lazy initialization
+_shiprocket_service_instance = None
+
+def get_shiprocket_service():
+    """
+    Get the Shiprocket service instance with lazy initialization
+    """
+    global _shiprocket_service_instance
+    if _shiprocket_service_instance is None:
+        _shiprocket_service_instance = ShiprocketService()
+    return _shiprocket_service_instance
+
+# For backward compatibility
+def get_shiprocket_service_instance():
+    return get_shiprocket_service()
+
+# Legacy attribute for backward compatibility
+shiprocket_service = None

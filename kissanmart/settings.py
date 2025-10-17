@@ -143,14 +143,14 @@ DATABASES = {}
 
 DATABASES = {
     'default': {
-        # 'ENGINE': 'django.db.backends.sqlite3',
-        'ENGINE': 'django.db.backends.postgresql',
-        # 'NAME': BASE_DIR / 'db.sqlite3',
-        'NAME': os.getenv('DATABASE_NAME'),
-        'USER': os.getenv('DATABASE_USER'),
-        'PASSWORD': os.getenv('DATABASE_PASSWORD'),
-        'HOST': os.getenv('DATABASE_HOST', 'localhost'),
-        'PORT': os.getenv('DATABASE_PORT', '5432'),
+        'ENGINE': 'django.db.backends.sqlite3',
+        # 'ENGINE': 'django.db.backends.postgresql',
+        'NAME': BASE_DIR / 'db.sqlite3',
+        # 'NAME': os.getenv('DATABASE_NAME'),
+        # 'USER': os.getenv('DATABASE_USER'),
+        # 'PASSWORD': os.getenv('DATABASE_PASSWORD'),
+        # 'HOST': os.getenv('DATABASE_HOST', 'localhost'),
+        # 'PORT': os.getenv('DATABASE_PORT', '5432'),
     }
 }
 
@@ -396,6 +396,14 @@ try:
     GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', GOOGLE_OAUTH2_CLIENT_SECRET)
     FACEBOOK_APP_ID = os.getenv('FACEBOOK_APP_ID', FACEBOOK_APP_ID)
     FACEBOOK_APP_SECRET = os.getenv('FACEBOOK_APP_SECRET', FACEBOOK_APP_SECRET)
+    # Shiprocket credentials (re-read after .env.local)
+    SHIPROCKET_API_EMAIL = os.getenv('SHIPROCKET_API_EMAIL', SHIPROCKET_API_EMAIL)
+    SHIPROCKET_API_PASSWORD = os.getenv('SHIPROCKET_API_PASSWORD', SHIPROCKET_API_PASSWORD)
+    # Razorpay credentials (re-read after .env.local)
+    RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', RAZORPAY_KEY_ID)
+    RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', RAZORPAY_KEY_SECRET)
+    # Pexels API key (re-read after .env.local)
+    PEXELS_API_KEY = os.getenv('PEXELS_API_KEY', PEXELS_API_KEY)
     # Admin credentials for simple admin APIs
     # These must be provided through environment variables in production.
     # For development, you can add them to <project>/kissanmart/.env.local
