@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.db import models
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
@@ -221,9 +222,18 @@ def delete_product(request, uuid):
     if request.user.user_type != 'smart_seller' and not getattr(request.user, 'is_staff', False):
         return Response({'error': {'code': 'FORBIDDEN', 'message': 'Only smart_seller accounts may delete products'}}, status=status.HTTP_403_FORBIDDEN)
 
-    # perform delete
-    product.delete()
-    return Response({'message': 'Product deleted successfully'}, status=status.HTTP_200_OK)
+    # Check if product has been ordered
+    try:
+        # perform delete
+        product.delete()
+        return Response({'message': 'Product deleted successfully'}, status=status.HTTP_200_OK)
+    except models.ProtectedError:
+        return Response({
+            'error': {
+                'code': 'PRODUCT_ORDERED',
+                'message': 'Product is already ordered and cannot be deleted.'
+            }
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @extend_schema(responses={200: ProductListSerializer(many=True)})
