@@ -44,7 +44,7 @@ class Product(models.Model):
     
     # 2. Product Information
     title = models.CharField(max_length=100, default='Unnamed Product', help_text="Name of the produce (e.g., Tomato).")
-    category = models.CharField(max_length=100, blank=True, null=True, help_text="High-level crop category (Vegetable, Fruit, etc.).")
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, help_text="Product category", related_name='products')
     crop = models.CharField(max_length=100, blank=True, null=True, help_text="Specific crop name (e.g., Brinjal).")
     variety = models.CharField(max_length=100, blank=True, null=True, help_text="Specific variety (e.g., Heirloom Tomato).")
     grade = models.CharField(max_length=50, blank=True, null=True, help_text="Grade/quality (e.g., A, B).")

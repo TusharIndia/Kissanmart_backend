@@ -204,7 +204,7 @@ class PexelsImageService:
         from .models import Product
         existing_product = Product.objects.filter(
             title__iexact=product.title,
-            category__iexact=product.category or '',
+            category=product.category,  # Direct comparison since both are Category instances
             pexels_image_url__isnull=False
         ).exclude(id=product.id).first()
         
@@ -226,7 +226,8 @@ class PexelsImageService:
         
         try:
             # Fetch new HD image from Pexels API with category context
-            image_url = self.fetch_product_image_url(product.title, product.category)
+            category_name = product.category.name if product.category else None
+            image_url = self.fetch_product_image_url(product.title, category_name)
             if image_url:
                 product.pexels_image_url = image_url
                 product.save(update_fields=['pexels_image_url'])
@@ -259,7 +260,8 @@ class PexelsImageService:
         product.pexels_image_url = None
         
         # Fetch new HD image
-        image_url = self.fetch_product_image_url(product.title, product.category)
+        category_name = product.category.name if product.category else None
+        image_url = self.fetch_product_image_url(product.title, category_name)
         if image_url:
             product.pexels_image_url = image_url
             product.save(update_fields=['pexels_image_url'])

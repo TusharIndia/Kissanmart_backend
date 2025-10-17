@@ -75,7 +75,37 @@ def download_remote_image(url, timeout=10):
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description']
+        fields = ['id', 'name', 'description', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class CategoryCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['name', 'description', 'is_active']
+        extra_kwargs = {
+            'is_active': {'default': True},
+            'description': {'required': False, 'allow_blank': True}
+        }
+
+    def validate_name(self, value):
+        """Ensure category name is unique (case-insensitive)"""
+        if Category.objects.filter(name__iexact=value.strip()).exists():
+            raise serializers.ValidationError("A category with this name already exists.")
+        return value.strip()
+
+
+class CategoryListSerializer(serializers.ModelSerializer):
+    """Serializer for listing categories (public endpoint)"""
+    product_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'description', 'is_active', 'created_at', 'product_count']
+
+    def get_product_count(self, obj):
+        """Count of active products in this category"""
+        return obj.products.filter(is_published=True).count()
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
@@ -172,18 +202,10 @@ class ProductListSerializer(serializers.ModelSerializer):
         }
 
     def get_category(self, obj):
-        # If the project actually stores category as a string on Product (legacy),
-        # try to resolve it to a Category model instance by name. If found,
-        # return the serialized Category object; otherwise return the raw string.
-        try:
-            if not obj.category:
-                return None
-            cat = Category.objects.filter(name__iexact=str(obj.category)).first()
-            if cat:
-                return CategorySerializer(cat).data
-            return obj.category
-        except Exception:
-            return obj.category
+        # Return the category object if it exists
+        if obj.category:
+            return CategorySerializer(obj.category).data
+        return None
 
     def get_seller(self, obj):
         try:
@@ -214,6 +236,8 @@ class ProductListSerializer(serializers.ModelSerializer):
 class ProductCreateSerializer(serializers.ModelSerializer):
     # location is required for product creation
     location = serializers.DictField(write_only=True, required=True)
+    # Category can be provided as category name (string) or category ID
+    category = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
     # Validate buyer categories against the allowed set in validate()
     buyerCategoryVisibility = serializers.ListField(child=serializers.CharField(), required=False)
     # Accept JSON objects for images (e.g. {"url": "https://..."}).
@@ -228,8 +252,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     priceType = serializers.CharField(write_only=True, required=False)
     # allow null when clients send null for non-market_linked price types
     marketPriceSource = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
-    # NOTE: do not add a separate capitalized `Category` field; the model-level
-    # `category` field (string) is already present and included in `fields`.
 
     class Meta:
         model = Product
@@ -291,6 +313,17 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             invalid = [v for v in bcv if v not in ALLOWED_BUYER_CATEGORIES]
             if invalid:
                 raise serializers.ValidationError({'buyerCategoryVisibility': f'invalid categories: {invalid}. allowed: {sorted(ALLOWED_BUYER_CATEGORIES)}'})
+
+        # Validate category - convert category name to Category instance
+        category_name = data.get('category')
+        if category_name:
+            try:
+                category = Category.objects.get(name__iexact=category_name.strip(), is_active=True)
+                data['category'] = category
+            except Category.DoesNotExist:
+                raise serializers.ValidationError({'category': f'Category "{category_name}" not found. Please ensure the category exists and is active.'})
+        else:
+            data['category'] = None
 
         return data
 
@@ -428,6 +461,16 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
         market_source = data.get('market_price_source') or data.get('marketPriceSource')
         if price_type == 'market_linked' and not market_source:
             raise serializers.ValidationError({'marketPriceSource': 'required when priceType is market_linked'})
+        
+        # Validate category - convert category name to Category instance
+        category_name = data.get('category')
+        if category_name:
+            try:
+                category = Category.objects.get(name__iexact=category_name.strip(), is_active=True)
+                data['category'] = category
+            except Category.DoesNotExist:
+                raise serializers.ValidationError({'category': f'Category "{category_name}" not found. Please ensure the category exists and is active.'})
+        
         return data
 
     def update(self, instance, validated_data):

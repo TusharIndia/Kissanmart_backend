@@ -9,6 +9,9 @@ from .views import (
     list_products,
     get_mandi_prices,
     get_product_distance,
+    list_categories,
+    add_category,
+    delete_category,
 )
 
 app_name = 'products_api'
@@ -28,4 +31,9 @@ urlpatterns = [
     path('products/list/', list_products, name='product-list'),
     path('products/mandi-price/', get_mandi_prices, name='mandi-prices'),
     path('products/<uuid:uuid>/distance/', get_product_distance, name='product-distance'),
+    
+    # Category management endpoints
+    path('categories/', list_categories, name='categories-list'),  # Public endpoint
+    path('categories/add/', add_category, name='add-category'),  # Admin only
+    path('categories/<int:category_id>/delete/', delete_category, name='delete-category'),  # Admin only
 ]

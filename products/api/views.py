@@ -166,17 +166,31 @@ def update_product(request, uuid):
     serializer = ProductUpdateSerializer(product, data=data, partial=True)
     if serializer.is_valid():
         # Check if title or category was updated - if so, might need new image
-        title_changed = 'title' in data and data['title'] != product.title
-        category_changed = 'category' in data and data['category'] != product.category
+        title_changed = 'title' in data and data.get('title') != product.title
+        
+        # Check if category changed by comparing category names
+        category_changed = False
+        if 'category' in data:
+            old_category_name = product.category.name if product.category else None
+            # Get the new category name from the validated data in the serializer
+            new_category = serializer.validated_data.get('category')
+            new_category_name = new_category.name if new_category else None
+            category_changed = old_category_name != new_category_name
+        
+        # Save the product first
         product = serializer.save()
         
-        # Fetch and store Pexels image URL if title/category changed or no image exists
-        if pexels_service.is_configured() and (title_changed or category_changed or not product.pexels_image_url):
+        # Only fetch new image if title/category changed AND we don't want to lose existing image
+        # Instead of clearing the image, only fetch new one if there's no existing image
+        if pexels_service.is_configured() and (title_changed or category_changed) and not product.pexels_image_url:
             try:
-                if title_changed or category_changed:
-                    # Clear existing image URL if title or category changed to force new search
-                    product.pexels_image_url = None
-                    product.save(update_fields=['pexels_image_url'])
+                pexels_service.get_or_fetch_product_image(product)
+            except Exception as e:
+                # Log error but don't fail the product update
+                logger.error(f"Error fetching Pexels image for product {product.title}: {e}")
+        elif pexels_service.is_configured() and not product.pexels_image_url:
+            # If no image exists, try to fetch one regardless of changes
+            try:
                 pexels_service.get_or_fetch_product_image(product)
             except Exception as e:
                 # Log error but don't fail the product update
@@ -590,3 +604,119 @@ def get_product_distance(request, uuid):
 
     d = haversine_distance(latf, lonf, product.latitude, product.longitude)
     return Response({'productId': str(product.uuid), 'distanceMeters': d})
+
+
+# Category Management Views
+
+from users.api.admin_views import AdminPermissionMixin
+from .serializers import CategoryCreateSerializer, CategoryListSerializer
+import base64
+
+
+@extend_schema(responses={200: dict})
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_categories(request):
+    """List all active categories (public endpoint)"""
+    categories = Category.objects.filter(is_active=True).order_by('name')
+    serializer = CategoryListSerializer(categories, many=True)
+    return Response({
+        'success': True,
+        'categories': serializer.data
+    })
+
+
+class CategoryAdminPermissionMixin:
+    """Mixin to check X-Admin-Token header for category admin operations"""
+
+    def check_admin(self, request):
+        header_token = request.headers.get('X-Admin-Token') or request.META.get('HTTP_X_ADMIN_TOKEN')
+        if not header_token:
+            # also support Authorization: Basic <base64>
+            auth = request.headers.get('Authorization') or request.META.get('HTTP_AUTHORIZATION', '')
+            if auth.startswith('Basic '):
+                header_token = auth.split(' ', 1)[1].strip()
+
+        if not header_token:
+            return False
+
+        expected_user = getattr(settings, 'ADMIN_USERNAME', None)
+        expected_pass = getattr(settings, 'ADMIN_PASSWORD', None)
+        if not expected_user or not expected_pass:
+            return False
+        
+        expected = base64.b64encode(f"{expected_user}:{expected_pass}".encode('utf-8')).decode('utf-8')
+        return header_token == expected
+
+
+@extend_schema(responses={201: dict})
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def add_category(request):
+    """Add a new category (admin only)"""
+    # Check admin authentication
+    mixin = CategoryAdminPermissionMixin()
+    if not mixin.check_admin(request):
+        return Response({
+            'success': False,
+            'message': 'Admin authentication required'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+
+    serializer = CategoryCreateSerializer(data=request.data)
+    if serializer.is_valid():
+        category = serializer.save()
+        return Response({
+            'success': True,
+            'message': 'Category created successfully',
+            'category': {
+                'id': category.id,
+                'name': category.name,
+                'description': category.description,
+                'is_active': category.is_active,
+                'created_at': category.created_at
+            }
+        }, status=status.HTTP_201_CREATED)
+    else:
+        return Response({
+            'success': False,
+            'message': 'Validation error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@extend_schema(responses={200: dict})
+@api_view(['DELETE'])
+@permission_classes([AllowAny])
+def delete_category(request, category_id):
+    """Delete a category (admin only)"""
+    # Check admin authentication
+    mixin = CategoryAdminPermissionMixin()
+    if not mixin.check_admin(request):
+        return Response({
+            'success': False,
+            'message': 'Admin authentication required'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        category = Category.objects.get(id=category_id)
+    except Category.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Category not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    # Check if any products are using this category
+    products_count = category.products.count()
+    if products_count > 0:
+        return Response({
+            'success': False,
+            'message': f'Cannot delete category. {products_count} products are still using this category.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    category_name = category.name
+    category.delete()
+    
+    return Response({
+        'success': True,
+        'message': f'Category "{category_name}" deleted successfully'
+    })
