@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: kissanmart-backend
+    runtime: python3
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate --noinput
+    startCommand: gunicorn kissanmart.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DJANGO_PRODUCTION
+        value: 1
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: False
+      - key: DJANGO_ALLOWED_HOSTS
+        fromSecret: django-allowed-hosts  # You'll need to set this secret in Render dashboard
+      # Add other secrets like GOOGLE_OAUTH2_CLIENT_ID, etc., as needed
+    healthCheckPath: /  # Or a specific health check endpoint if you have one
+
+databases:
+  - name: kissanmart-db
+    databaseName: kissanmart
+    user: kissanmart
