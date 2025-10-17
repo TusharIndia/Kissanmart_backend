@@ -18,7 +18,7 @@ from .api.views import (
     , LinkSocialView
     
     # Contact Query
-    , ContactQueryCreateView, ContactQueryListView
+    , ContactQueryCreateView, ContactQueryListView, ContactQueryDeleteView
     
 )
 
@@ -52,6 +52,7 @@ urlpatterns = [
     # CONTACT QUERY ENDPOINTS
     path('contact/', ContactQueryCreateView.as_view(), name='contact_create'),
     path('contact/queries/', ContactQueryListView.as_view(), name='contact_list'),
+    path('contact/queries/<int:query_id>/delete/', ContactQueryDeleteView.as_view(), name='contact_delete'),
     
     # OAuth endpoints used by frontend
     path('auth/oauth/callback/', csrf_exempt(OAuthCallbackView.as_view()), name='oauth_callback'),

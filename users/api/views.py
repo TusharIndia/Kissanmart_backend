@@ -1105,3 +1105,40 @@ class ContactQueryListView(AdminPermissionMixin, APIView):
             'message': f'Found {len(serializer.data)} contact queries',
             'queries': serializer.data
         }, status=status.HTTP_200_OK)
+
+
+@extend_schema(responses={200: dict})
+class ContactQueryDeleteView(AdminPermissionMixin, APIView):
+    """API for admin to delete a contact query"""
+    permission_classes = [AllowAny]
+    
+    def dispatch(self, request, *args, **kwargs):
+        if not self.check_admin(request):
+            return Response({
+                'success': False, 
+                'message': 'Admin authentication required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        return super().dispatch(request, *args, **kwargs)
+    
+    def delete(self, request, query_id, *args, **kwargs):
+        try:
+            query = ContactQuery.objects.get(id=query_id)
+            query_info = f"Query from {query.name} ({query.email}) - {query.created_at.strftime('%Y-%m-%d %H:%M')}"
+            query.delete()
+            
+            return Response({
+                'success': True,
+                'message': f'Contact query deleted successfully: {query_info}'
+            }, status=status.HTTP_200_OK)
+            
+        except ContactQuery.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Contact query not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.exception('Error deleting contact query')
+            return Response({
+                'success': False,
+                'message': 'Failed to delete contact query'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
