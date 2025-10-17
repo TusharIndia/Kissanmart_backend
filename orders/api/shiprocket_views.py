@@ -153,10 +153,19 @@ class CreateShiprocketOrderView(APIView):
             order = get_object_or_404(Order, uuid=order_uuid, user=request.user)
             
             # Validate order state
-            if order.payment_status != 'completed':
+            # For COD orders, payment status can be pending since payment is collected on delivery
+            # For prepaid orders, payment must be completed
+            if order.payment_method != 'cod' and order.payment_status != 'completed':
                 return Response({
                     'success': False,
                     'message': 'Order payment not completed. Cannot create shipping order.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Additional validation: Order should be in a valid state for shipping
+            if order.status not in ['confirmed', 'processing', 'pending']:
+                return Response({
+                    'success': False,
+                    'message': f'Order status ({order.status}) is not valid for creating shipment.'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             if order.shiprocket_order_id:
@@ -189,7 +198,7 @@ class CreateShiprocketOrderView(APIView):
                     'selling_price': float(item.unit_price)
                 })
                 # Estimate weight (you might want to add weight field to Product model)
-                total_weight += item.quantity * Decimal('0.5')  # 0.5kg per unit as default
+                total_weight += item.quantity * Decimal('1.0')  # Assuming 1kg per unit as default
             
             # Determine payment method for Shiprocket
             shiprocket_payment_method = "Prepaid"

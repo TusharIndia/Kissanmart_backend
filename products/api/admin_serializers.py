@@ -61,7 +61,7 @@ class AdminProductListSerializer(serializers.ModelSerializer):
     
     # Quantity and pricing
     availableQuantity = serializers.DecimalField(source='quantity_available', max_digits=12, decimal_places=3, read_only=True)
-    quantityUnit = serializers.CharField(source='unit', read_only=True)
+    quantityUnit = serializers.SerializerMethodField()
     pricePerUnit = serializers.DecimalField(source='price_per_unit', max_digits=12, decimal_places=2, read_only=True)
     totalValue = serializers.DecimalField(source='total_value', max_digits=15, decimal_places=2, read_only=True)
     
@@ -101,6 +101,17 @@ class AdminProductListSerializer(serializers.ModelSerializer):
             'city': obj.city,
             'pincode': obj.pincode
         }
+
+    def get_quantityUnit(self, obj):
+        try:
+            u = getattr(obj, 'unit', None)
+            if not u:
+                return None
+            if str(u).upper() == 'KG':
+                return 'kg'
+            return str(u).lower()
+        except Exception:
+            return getattr(obj, 'unit', None)
 
     def get_primaryImage(self, obj):
         primary_image = obj.images.filter(is_primary=True).first()

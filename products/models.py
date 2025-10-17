@@ -85,6 +85,66 @@ class Product(models.Model):
     def __str__(self):
         return f"{self.title} ({self.seller.username})"
 
+    def save(self, *args, **kwargs):
+        """Normalize units on save: convert quintals to kilograms so the DB stores quantities in KG only.
+
+        Rules:
+        - If `unit` contains 'quint' (case-insensitive), multiply `quantity_available` and `min_order_quantity` by 100.
+        - Divide `price_per_unit` by 100 to convert price per quintal -> price per kg.
+        - Set `unit` to 'KG'.
+
+        This makes normalization idempotent for already-normalized records (unit == 'KG').
+        """
+        try:
+            # Normalize the unit field to canonical uppercase choice values if possible
+            if self.unit is not None:
+                s = str(self.unit).strip()
+                low = s.lower()
+                if 'quint' in low:
+                    canonical = 'QUINTAL'
+                elif low in ('kg', 'kilogram', 'kilograms'):
+                    canonical = 'KG'
+                elif 'ton' in low or 'tonne' in low:
+                    canonical = 'TON'
+                elif 'dozen' in low:
+                    canonical = 'DOZEN'
+                elif low in ('unit', 'piece', 'pieces'):
+                    canonical = 'UNIT'
+                else:
+                    canonical = s.upper()
+
+                self.unit = canonical
+
+            # Only perform conversion if unit is canonical 'QUINTAL'
+            if self.unit == 'QUINTAL':
+                from decimal import Decimal
+
+                if self.quantity_available is not None:
+                    try:
+                        self.quantity_available = Decimal(str(self.quantity_available)) * Decimal('100')
+                    except Exception:
+                        pass
+
+                if self.min_order_quantity is not None:
+                    try:
+                        self.min_order_quantity = Decimal(str(self.min_order_quantity)) * Decimal('100')
+                    except Exception:
+                        pass
+
+                if self.price_per_unit is not None:
+                    try:
+                        self.price_per_unit = (Decimal(str(self.price_per_unit)) / Decimal('100'))
+                    except Exception:
+                        pass
+
+                # store as KG going forward
+                self.unit = 'KG'
+        except Exception:
+            # on any unexpected issue, continue with default save to avoid blocking
+            pass
+
+        super().save(*args, **kwargs)
+
     @property
     def total_value(self):
         """Calculate total value of available stock"""

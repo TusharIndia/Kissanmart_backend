@@ -8,6 +8,29 @@ import requests
 from urllib.parse import urlparse
 import os
 from django.core.files.uploadedfile import InMemoryUploadedFile, TemporaryUploadedFile
+from decimal import Decimal
+
+# helper to normalize unit strings to canonical values used in the Product model
+def _normalize_unit(unit_val):
+    if unit_val is None:
+        return unit_val
+    s = str(unit_val).strip().lower()
+    if not s:
+        return unit_val
+    # common mappings and fuzzy matches
+    if 'quint' in s:
+        return 'QUINTAL'
+    if s in ('kg', 'kilogram', 'kilograms') or 'kg' == s:
+        return 'KG'
+    if 'ton' in s or 'tonne' in s:
+        return 'TON'
+    if 'dozen' in s:
+        return 'DOZEN'
+    if s in ('unit', 'piece', 'pieces'):
+        return 'UNIT'
+    # If the value already looks like an uppercase canonical value, return uppercase
+    up = str(unit_val).strip().upper()
+    return up
 
 # Allowed buyer categories for visibility (match users.models CustomUser.BUYER_CATEGORY_CHOICES)
 ALLOWED_BUYER_CATEGORIES = {'mandi_owner', 'shopkeeper', 'community'}
@@ -112,7 +135,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     variety = serializers.CharField()
     grade = serializers.CharField()
     availableQuantity = serializers.DecimalField(source='quantity_available', max_digits=12, decimal_places=3)
-    quantityUnit = serializers.CharField(source='unit')
+    quantityUnit = serializers.SerializerMethodField()
     pricePerUnit = serializers.DecimalField(source='price_per_unit', max_digits=12, decimal_places=2)
     priceCurrency = serializers.CharField(source='price_currency', allow_null=True, required=False)
     priceType = serializers.CharField(source='price_type', allow_null=True, required=False)
@@ -174,6 +197,18 @@ class ProductListSerializer(serializers.ModelSerializer):
             }
         except Exception:
             return None
+
+    def get_quantityUnit(self, obj):
+        try:
+            u = getattr(obj, 'unit', None)
+            if not u:
+                return None
+            # return lowercase kg for KG and otherwise lowercase of canonical
+            if str(u).upper() == 'KG':
+                return 'kg'
+            return str(u).lower()
+        except Exception:
+            return getattr(obj, 'unit', None)
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):
@@ -270,7 +305,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         if 'availableQuantity' in validated_data:
             validated_data['quantity_available'] = validated_data.pop('availableQuantity')
         if 'quantityUnit' in validated_data:
-            validated_data['unit'] = validated_data.pop('quantityUnit')
+            validated_data['unit'] = _normalize_unit(validated_data.pop('quantityUnit'))
         if 'pricePerUnit' in validated_data:
             validated_data['price_per_unit'] = validated_data.pop('pricePerUnit')
         if 'priceCurrency' in validated_data:
@@ -295,6 +330,43 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         # If a seller kwarg was provided to create, it'll be in self.context['seller'] by our view wrapper
         if seller is not None:
             validated_data['seller'] = seller
+
+        # Normalize units: if seller provided quantity in quintals, convert to kilograms.
+        # Accept fuzzy matches (case-insensitive substring 'quint').
+        unit_val = validated_data.get('unit')
+        # normalize any unit string we received
+        if unit_val is not None:
+            unit_val = _normalize_unit(unit_val)
+            validated_data['unit'] = unit_val
+
+        if unit_val and unit_val == 'QUINTAL':
+            # convert available quantity (quintals -> kg)
+            aq = validated_data.get('quantity_available')
+            if aq is not None:
+                try:
+                    validated_data['quantity_available'] = Decimal(str(aq)) * Decimal('100')
+                except Exception:
+                    pass
+
+            # convert price_per_unit (price per quintal -> price per kg)
+            pp = validated_data.get('price_per_unit')
+            if pp is not None:
+                try:
+                    # keep two decimal places for price
+                    validated_data['price_per_unit'] = (Decimal(str(pp)) / Decimal('100')).quantize(Decimal('0.01'))
+                except Exception:
+                    pass
+
+            # convert min_order_quantity if provided
+            moq = validated_data.get('min_order_quantity')
+            if moq is not None:
+                try:
+                    validated_data['min_order_quantity'] = Decimal(str(moq)) * Decimal('100')
+                except Exception:
+                    pass
+
+            # store normalized unit as kilograms
+            validated_data['unit'] = 'KG'
 
         product = Product.objects.create(**validated_data)
 
@@ -367,7 +439,7 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
         if 'availableQuantity' in validated_data:
             validated_data['quantity_available'] = validated_data.pop('availableQuantity')
         if 'quantityUnit' in validated_data:
-            validated_data['unit'] = validated_data.pop('quantityUnit')
+            validated_data['unit'] = _normalize_unit(validated_data.pop('quantityUnit'))
         if 'pricePerUnit' in validated_data:
             validated_data['price_per_unit'] = validated_data.pop('pricePerUnit')
         if 'priceCurrency' in validated_data:
@@ -376,6 +448,39 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
             validated_data['price_type'] = validated_data.pop('priceType')
         if 'marketPriceSource' in validated_data:
             validated_data['market_price_source'] = validated_data.pop('marketPriceSource')
+
+        # If the incoming data used quintals as unit, normalize and convert quantities/prices to KG
+        unit_val = validated_data.get('unit')
+        if unit_val is not None:
+            unit_val = _normalize_unit(unit_val)
+            validated_data['unit'] = unit_val
+
+        if unit_val and unit_val == 'QUINTAL':
+            # convert available_quantity if present
+            aq = validated_data.get('quantity_available')
+            if aq is not None:
+                try:
+                    validated_data['quantity_available'] = Decimal(str(aq)) * Decimal('100')
+                except Exception:
+                    pass
+
+            # convert price_per_unit if present (per quintal -> per kg)
+            pp = validated_data.get('price_per_unit')
+            if pp is not None:
+                try:
+                    validated_data['price_per_unit'] = (Decimal(str(pp)) / Decimal('100')).quantize(Decimal('0.01'))
+                except Exception:
+                    pass
+
+            # convert min_order_quantity if present
+            moq = validated_data.get('min_order_quantity')
+            if moq is not None:
+                try:
+                    validated_data['min_order_quantity'] = Decimal(str(moq)) * Decimal('100')
+                except Exception:
+                    pass
+
+            validated_data['unit'] = 'KG'
 
         for attr, val in validated_data.items():
             setattr(instance, attr, val)
