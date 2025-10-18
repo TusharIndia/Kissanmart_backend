@@ -362,6 +362,130 @@ class ShiprocketService:
             logger.error(f"Order cancellation failed: {str(e)}")
             raise ShiprocketAPIError(f"Order cancellation failed: {str(e)}")
     
+    def get_pickup_schedule(self, order_id: str = None, shipment_id: int = None) -> Dict[str, Any]:
+        """
+        Get pickup schedule details for an order
+        
+        Args:
+            order_id: Channel order ID (our order ID)
+            shipment_id: Shiprocket shipment ID
+        """
+        if not order_id and not shipment_id:
+            raise ShiprocketAPIError("Either order_id or shipment_id is required")
+        
+        try:
+            # First get order details to find shipment info
+            if order_id and not shipment_id:
+                order_details = self.get_order_details(order_id)
+                if not order_details['success']:
+                    return order_details
+                
+                order_data = order_details['order_data']
+                if not order_data:
+                    return {
+                        'success': False,
+                        'message': 'Order data not found'
+                    }
+                
+                # Extract shipment ID from order data
+                if isinstance(order_data, list) and len(order_data) > 0:
+                    shipment_id = order_data[0].get('shipments', [{}])[0].get('id')
+                elif isinstance(order_data, dict):
+                    shipments = order_data.get('shipments', [])
+                    if shipments:
+                        shipment_id = shipments[0].get('id')
+            
+            if not shipment_id:
+                return {
+                    'success': False,
+                    'message': 'Shipment ID not found for order'
+                }
+            
+            # Get shipment details
+            params = {'shipment_id': shipment_id}
+            response = self._make_request('GET', 'shipments/show', params=params)
+            
+            shipment_data = response.get('data', {})
+            
+            # Extract pickup information
+            pickup_scheduled_date = shipment_data.get('pickup_scheduled_date')
+            pickup_token_number = shipment_data.get('pickup_token_number')
+            status = shipment_data.get('status')
+            
+            # Check if pickup has been completed
+            pickup_completed = status in ['PICKED UP', 'SHIPPED', 'IN TRANSIT', 'DELIVERED']
+            
+            return {
+                'success': True,
+                'shipment_id': shipment_id,
+                'pickup_scheduled_date': pickup_scheduled_date,
+                'pickup_token_number': pickup_token_number,
+                'current_status': status,
+                'pickup_completed': pickup_completed,
+                'can_cancel': not pickup_completed,
+                'raw_response': response
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get pickup schedule: {str(e)}")
+            raise ShiprocketAPIError(f"Failed to get pickup schedule: {str(e)}")
+    
+    def check_cancellation_eligibility(self, order_id: str = None, shipment_id: int = None) -> Dict[str, Any]:
+        """
+        Check if an order can be cancelled based on pickup status
+        
+        Args:
+            order_id: Channel order ID (our order ID)
+            shipment_id: Shiprocket shipment ID
+        """
+        try:
+            pickup_info = self.get_pickup_schedule(order_id=order_id, shipment_id=shipment_id)
+            
+            if not pickup_info['success']:
+                return pickup_info
+            
+            can_cancel = pickup_info['can_cancel']
+            pickup_completed = pickup_info['pickup_completed']
+            current_status = pickup_info['current_status']
+            pickup_scheduled_date = pickup_info['pickup_scheduled_date']
+            
+            # Parse pickup scheduled date if available
+            pickup_datetime = None
+            if pickup_scheduled_date:
+                try:
+                    from datetime import datetime
+                    pickup_datetime = datetime.fromisoformat(pickup_scheduled_date.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    pass
+            
+            message = ""
+            if not can_cancel:
+                message = f"You cannot cancel the order after the pickup date and time. Current status: {current_status}"
+            else:
+                if pickup_datetime:
+                    message = f"Order can be cancelled till pickup scheduled on {pickup_scheduled_date}"
+                else:
+                    message = "Order can be cancelled as pickup is not yet completed"
+            
+            return {
+                'success': True,
+                'can_cancel': can_cancel,
+                'pickup_completed': pickup_completed,
+                'current_status': current_status,
+                'pickup_scheduled_date': pickup_scheduled_date,
+                'pickup_datetime': pickup_datetime,
+                'message': message
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to check cancellation eligibility: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'can_cancel': False,
+                'message': 'Unable to verify cancellation eligibility at this time'
+            }
+    
     def get_order_details(self, order_id: str) -> Dict[str, Any]:
         """
         Get order details from Shiprocket
@@ -375,16 +499,36 @@ class ShiprocketService:
         
         try:
             response = self._make_request('GET', 'orders/show', params=params)
-            
+
             return {
                 'success': True,
                 'order_data': response.get('data'),
                 'response': response
             }
-            
+
+        except ShiprocketAPIError as e:
+            # If Shiprocket returns 404 for order not found, surface a clear response
+            msg = str(e)
+            logger.warning(f"Shiprocket get_order_details error for channel_order_id={order_id}: {msg}")
+
+            if '404' in msg or 'Not Found' in msg:
+                return {
+                    'success': False,
+                    'message': 'Order not found on Shiprocket',
+                    'status_code': 404
+                }
+
+            # For other errors, return a structured failure
+            return {
+                'success': False,
+                'message': f'Failed to get order details: {msg}'
+            }
         except Exception as e:
             logger.error(f"Failed to get order details: {str(e)}")
-            raise ShiprocketAPIError(f"Failed to get order details: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Failed to get order details: {str(e)}'
+            }
     
     def get_pickup_locations(self) -> List[Dict[str, Any]]:
         """

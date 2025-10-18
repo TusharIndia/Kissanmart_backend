@@ -123,7 +123,13 @@ class Order(models.Model):
     shipping_charges = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Shipping and handling charges")
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Total discount applied")
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Tax amount")
+    razorpay_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Razorpay payment gateway fee")
+    platform_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Platform fee (1% of order value)")
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, help_text="Final total amount")
+    
+    # Shiprocket tracking fields
+    shiprocket_pickup_scheduled_date = models.DateTimeField(blank=True, null=True, help_text="Scheduled pickup date from Shiprocket")
+    can_cancel_till = models.DateTimeField(blank=True, null=True, help_text="Last date/time till order can be cancelled")
     
     # Delivery address
     delivery_address = models.ForeignKey(DeliveryAddress, on_delete=models.PROTECT, help_text="Delivery address for this order")
@@ -191,7 +197,7 @@ class Order(models.Model):
         self.shipping_charges = Decimal('0.00') if self.subtotal > 500 else Decimal('50.00')
         
         # Calculate total
-        self.total_amount = self.subtotal + self.shipping_charges + self.tax_amount - self.discount_amount
+        self.total_amount = self.subtotal + self.shipping_charges + self.tax_amount + self.razorpay_fee + self.platform_fee - self.discount_amount
     
     @property
     def items_count(self):
@@ -205,8 +211,16 @@ class Order(models.Model):
     
     @property
     def can_be_cancelled(self):
-        """Check if order can be cancelled"""
-        return self.status in ['confirmed', 'processing', 'packed']
+        """Check if order can be cancelled based on status and pickup schedule"""
+        # Basic status check
+        if self.status not in ['confirmed', 'processing', 'packed']:
+            return False
+        
+        # Check if pickup date has passed
+        if self.can_cancel_till and timezone.now() > self.can_cancel_till:
+            return False
+            
+        return True
     
     @property
     def can_be_tracked(self):
@@ -454,6 +468,115 @@ class OrderRefund(models.Model):
         # Calculate final refund amount
         self.final_refund_amount = self.refund_amount - self.processing_fee
         super().save(*args, **kwargs)
+
+
+class OrderCancellationRequest(models.Model):
+    """Model to track order cancellation requests from customers"""
+    
+    CANCELLATION_STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved - Refund Initiated'),
+        ('refund_processed', 'Refund Processed'),
+        ('rejected', 'Rejected'),
+        ('cancelled', 'Request Cancelled'),
+    ]
+    
+    CANCELLATION_REASON_CHOICES = [
+        ('change_of_mind', 'Change of Mind'),
+        ('product_not_needed', 'Product Not Needed Anymore'),
+        ('found_better_price', 'Found Better Price Elsewhere'),
+        ('delivery_delay', 'Delivery Taking Too Long'),
+        ('wrong_product', 'Ordered Wrong Product'),
+        ('payment_issue', 'Payment Related Issue'),
+        ('other', 'Other Reason'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='cancellation_request')
+    
+    # Request details
+    reason = models.CharField(max_length=50, choices=CANCELLATION_REASON_CHOICES, help_text="Reason for cancellation")
+    reason_description = models.TextField(help_text="Detailed reason for cancellation")
+    request_status = models.CharField(max_length=20, choices=CANCELLATION_STATUS_CHOICES, default='pending')
+    
+    # Financial details for refund calculation
+    refund_amount = models.DecimalField(max_digits=10, decimal_places=2, help_text="Amount to be refunded")
+    razorpay_fee_deduction = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Razorpay fee to be deducted")
+    platform_fee_deduction = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Platform fee to be deducted")
+    final_refund_amount = models.DecimalField(max_digits=10, decimal_places=2, help_text="Final amount after deductions")
+    
+    # Refund processing
+    razorpay_refund_id = models.CharField(max_length=255, blank=True, null=True, help_text="Razorpay refund transaction ID")
+    refund_processed_at = models.DateTimeField(blank=True, null=True, help_text="When refund was processed")
+    
+    # Admin handling
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_cancellations')
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+    admin_notes = models.TextField(blank=True, help_text="Admin notes about the cancellation")
+    
+    # Shiprocket cancellation
+    shiprocket_cancelled = models.BooleanField(default=False, help_text="Whether order was cancelled in Shiprocket")
+    shiprocket_cancellation_response = JSONField(default=dict, blank=True, help_text="Shiprocket cancellation API response")
+    
+    # Timestamps
+    requested_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Order Cancellation Request"
+        verbose_name_plural = "Order Cancellation Requests"
+        ordering = ['-requested_at']
+    
+    def __str__(self):
+        return f"Cancellation Request for Order {self.order.id} - {self.request_status}"
+    
+    def save(self, *args, **kwargs):
+        # Calculate refund amounts on first save
+        if not self.pk:
+            self.calculate_refund_amounts()
+        super().save(*args, **kwargs)
+    
+    def calculate_refund_amounts(self):
+        """Calculate refund amounts based on order details"""
+        order = self.order
+        
+        # Base refund amount (total paid by customer)
+        self.refund_amount = order.total_amount
+        
+        # Deduct fees
+        self.razorpay_fee_deduction = order.razorpay_fee
+        self.platform_fee_deduction = order.platform_fee
+        
+        # Calculate final refund amount
+        self.final_refund_amount = self.refund_amount - self.razorpay_fee_deduction - self.platform_fee_deduction
+        
+        # Ensure final amount is not negative
+        if self.final_refund_amount < 0:
+            self.final_refund_amount = Decimal('0.00')
+    
+    def approve_cancellation(self, admin_user, admin_notes=''):
+        """Approve the cancellation request"""
+        self.request_status = 'approved'
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        self.admin_notes = admin_notes
+        self.save()
+    
+    def reject_cancellation(self, admin_user, admin_notes=''):
+        """Reject the cancellation request"""
+        self.request_status = 'rejected'
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        self.admin_notes = admin_notes
+        self.save()
+    
+    def mark_refund_processed(self, razorpay_refund_id=''):
+        """Mark refund as processed"""
+        self.request_status = 'refund_processed'
+        self.refund_processed_at = timezone.now()
+        if razorpay_refund_id:
+            self.razorpay_refund_id = razorpay_refund_id
+        self.save()
 
 
 class OrderAnalytics(models.Model):

@@ -1,5 +1,5 @@
 from django.urls import path, include
-from . import views, admin_views, razorpay_views, seller_views, shiprocket_views
+from . import views, admin_views, razorpay_views, seller_views, shiprocket_views, cancellation_views
 
 # Core order API URLs
 urlpatterns = [
@@ -54,4 +54,15 @@ urlpatterns = [
     path('admin/orders/<uuid:order_uuid>/', admin_views.AdminOrderDetailView.as_view(), name='admin_order_detail'),
     path('admin/analytics/', admin_views.AdminOrderAnalyticsView.as_view(), name='admin_analytics'),
     path('admin/dashboard/', admin_views.AdminDashboardStatsView.as_view(), name='admin_dashboard'),
+    
+    # Cancellation & Refund APIs
+    path('<uuid:order_uuid>/cancellation/eligibility/', cancellation_views.CheckOrderCancellationEligibilityView.as_view(), name='cancellation_eligibility'),
+    path('<uuid:order_uuid>/cancellation/request/', cancellation_views.CreateCancellationRequestView.as_view(), name='create_cancellation_request'),
+    path('<uuid:order_uuid>/cancellation/', cancellation_views.CancellationRequestDetailView.as_view(), name='cancellation_detail'),
+
+    # Admin cancellation management
+    path('admin/cancellations/', cancellation_views.AdminCancellationRequestListView.as_view(), name='admin_cancellation_list'),
+    path('admin/cancellations/<uuid:cancellation_request_id>/process/', cancellation_views.AdminProcessRefundView.as_view(), name='admin_process_refund'),
+    path('admin/cancellations/<uuid:cancellation_request_id>/reject/', cancellation_views.AdminRejectCancellationView.as_view(), name='admin_reject_cancellation'),
+    path('admin/cancellations/stats/', cancellation_views.admin_cancellation_stats, name='admin_cancellation_stats'),
 ]
