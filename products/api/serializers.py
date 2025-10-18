@@ -215,7 +215,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             return {
                 'id': seller_id,
                 'full_name': getattr(s, 'full_name', None),
-                'mobile_number': getattr(s, 'mobile_number', None),
+                'mobile_number': 'XXXXXXXXXX',
             }
         except Exception:
             return None

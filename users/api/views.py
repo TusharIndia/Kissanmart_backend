@@ -42,7 +42,8 @@ from .serializers_new import (
     UserProfileSerializer,
     UserListSerializer,
     ContactQuerySerializer,
-    ContactQueryListSerializer
+    ContactQueryListSerializer,
+    RoleAvailabilitySerializer
 )
 from drf_spectacular.utils import extend_schema
 
@@ -129,7 +130,7 @@ class SendOTPView(APIView):
 
 @extend_schema(request=OTPVerificationSerializer, responses={200: dict})
 class VerifyPhoneRegistrationView(APIView):
-    """Step 2: Verify phone number and create basic user account"""
+    """Step 2: Verify phone number and prepare for profile completion"""
     permission_classes = [AllowAny]
     
     def post(self, request):
@@ -139,16 +140,20 @@ class VerifyPhoneRegistrationView(APIView):
             otp_instance = serializer.validated_data['otp_instance']
             mobile_number = serializer.validated_data['mobile_number']
             
-            # Check if user already exists
-            existing_user = CustomUser.objects.filter(mobile_number=mobile_number).first()
-            if existing_user:
-                if existing_user.is_profile_complete:
-                    return Response({
-                        'success': False,
-                        'message': 'User with this mobile number already exists. Please login instead.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                else:
-                    # User exists but profile incomplete - just mark OTP as verified and return
+            # Check existing users with this mobile number
+            existing_users = CustomUser.objects.filter(mobile_number=mobile_number)
+            
+            # Get role availability information
+            role_info = CustomUser.get_available_roles_for_mobile(mobile_number)
+            
+            # Initialize profile_template as None for new users
+            profile_template = None
+            
+            if existing_users.exists():
+                # Check if any existing user has incomplete profile
+                incomplete_user = existing_users.filter(is_profile_complete=False).first()
+                if incomplete_user:
+                    # Mark OTP as verified
                     otp_instance.is_verified = True
                     otp_instance.save()
                     try:
@@ -159,44 +164,51 @@ class VerifyPhoneRegistrationView(APIView):
                     return Response({
                         'success': True,
                         'message': 'Phone number verified successfully. Please complete your profile.',
-                        'user_id': existing_user.id,
+                        'user_id': incomplete_user.id,
                         'mobile_number': mobile_number,
                         'next_step': 'complete_profile',
-                        'profile_complete': False
+                        'profile_complete': False,
+                        'role_availability': role_info
                     }, status=status.HTTP_200_OK)
+                
+                # All existing users have complete profiles
+                if not role_info['available_roles']:
+                    # No more roles available
+                    return Response({
+                        'success': False,
+                        'message': 'All possible accounts (Seller, Buyer categories) already exist for this mobile number.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Get profile template from any existing complete user
+                template_user = existing_users.filter(is_profile_complete=True).first()
+                if template_user:
+                    profile_template = {
+                        'full_name': template_user.full_name,
+                        'email': template_user.email,
+                        'address': template_user.address,
+                        'city': template_user.city,
+                        'state': template_user.state,
+                        'pincode': template_user.pincode,
+                        'latitude': str(template_user.latitude),
+                        'longitude': str(template_user.longitude)
+                    }
             
             # Mark OTP as verified
             otp_instance.is_verified = True
             otp_instance.save()
-            # Remove the OTP record after successful verification to prevent reuse
             try:
                 otp_instance.delete()
             except Exception:
                 logger.exception('Failed to delete OTP instance after verification')
             
-            # Create incomplete user account
-            user = CustomUser.objects.create(
-                mobile_number=mobile_number,
-                registration_method='phone',
-                is_mobile_verified=True,
-                # These fields are empty and will be required in next step
-                full_name='',
-                user_type='',
-                address='',
-                city='',
-                state='',
-                pincode=''
-            )
-            user.set_unusable_password()
-            user.save()
-            
             return Response({
                 'success': True,
                 'message': 'Phone number verified successfully. Please complete your profile.',
-                'user_id': user.id,
                 'mobile_number': mobile_number,
                 'next_step': 'complete_profile',
-                'profile_complete': False
+                'profile_complete': False,
+                'role_availability': role_info,
+                'profile_template': profile_template  # Include existing profile data
             }, status=status.HTTP_200_OK)
         
         return Response({
@@ -207,7 +219,7 @@ class VerifyPhoneRegistrationView(APIView):
 
 @extend_schema(request=ProfileCompletionSerializer, responses={200: dict})
 class CompleteProfileView(APIView):
-    """Step 3: Complete user profile after phone verification"""
+    """Step 3: Complete user profile after phone verification - supports multi-role"""
     permission_classes = [AllowAny]
     
     def post(self, request):
@@ -227,26 +239,57 @@ class CompleteProfileView(APIView):
         elif cleaned_number.startswith('91'):
             cleaned_number = cleaned_number[2:]
         
-        try:
-            user = CustomUser.objects.get(mobile_number=cleaned_number)
-        except CustomUser.DoesNotExist:
-            return Response({
-                'success': False,
-                'message': 'User with this mobile number does not exist'
-            }, status=status.HTTP_404_NOT_FOUND)
+        # Check if this specific role combination already exists
+        user_type = request.data.get('user_type')
+        buyer_category = request.data.get('buyer_category')
         
-        # Check if mobile number is verified
-        if not user.is_mobile_verified:
+        if not user_type:
             return Response({
                 'success': False,
-                'message': 'Please verify your mobile number first'
+                'message': 'User type is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if profile is already complete
+        # Find if there's an incomplete user or create a new one
+        existing_query = CustomUser.objects.filter(mobile_number=cleaned_number)
+        
+        # Check for incomplete profile first
+        incomplete_user = existing_query.filter(is_profile_complete=False).first()
+        
+        # Check if the specific role combination already exists
+        role_specific_query = existing_query.filter(user_type=user_type)
+        if user_type == 'smart_buyer' and buyer_category:
+            role_specific_query = role_specific_query.filter(buyer_category=buyer_category)
+        
+        if role_specific_query.exists():
+            return Response({
+                'success': False,
+                'message': 'An account with this role already exists for this mobile number'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Use incomplete user if exists, otherwise create new user
+        if incomplete_user:
+            user = incomplete_user
+        else:
+            # Create new user for this role
+            user = CustomUser.objects.create(
+                mobile_number=cleaned_number,
+                registration_method='phone',
+                is_mobile_verified=True,
+                full_name='',
+                user_type='',
+                address='',
+                city='',
+                state='',
+                pincode=''
+            )
+            user.set_unusable_password()
+            user.save()
+        
+        # Check if profile is already complete for this user
         if user.is_profile_complete:
             return Response({
                 'success': False,
-                'message': 'Profile is already complete'
+                'message': 'Profile is already complete for this account'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = ProfileCompletionSerializer(user, data=request.data)
@@ -256,7 +299,6 @@ class CompleteProfileView(APIView):
             serializer.save()
             
             # Generate token for the user after profile completion
-            # Prevent issuing tokens if account is suspended
             if not user.is_active:
                 return Response({'success': False, 'message': 'Account suspended'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -277,6 +319,103 @@ class CompleteProfileView(APIView):
             'success': False,
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@extend_schema(request=ProfileCompletionSerializer, responses={200: dict})
+class QuickRoleRegistrationView(APIView):
+    """Quick role registration using existing profile data"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        mobile_number = request.data.get('mobile_number')
+        user_type = request.data.get('user_type')
+        buyer_category = request.data.get('buyer_category')
+        
+        if not mobile_number or not user_type:
+            return Response({
+                'success': False,
+                'message': 'Mobile number and user type are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Clean mobile number
+        import re
+        cleaned_number = re.sub(r'[^\d+]', '', mobile_number)
+        if cleaned_number.startswith('+91'):
+            cleaned_number = cleaned_number[3:]
+        elif cleaned_number.startswith('91'):
+            cleaned_number = cleaned_number[2:]
+        
+        # Check if template user exists
+        existing_users = CustomUser.objects.filter(mobile_number=cleaned_number, is_profile_complete=True)
+        if not existing_users.exists():
+            return Response({
+                'success': False,
+                'message': 'No existing profile found. Please complete full registration.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if this role already exists
+        existing_query = CustomUser.objects.filter(
+            mobile_number=cleaned_number,
+            user_type=user_type
+        )
+        if user_type == 'smart_buyer' and buyer_category:
+            existing_query = existing_query.filter(buyer_category=buyer_category)
+        
+        if existing_query.exists():
+            return Response({
+                'success': False,
+                'message': 'This role already exists for this mobile number'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get template profile data
+        template_user = existing_users.first()
+        
+        # Create new user with template data
+        new_user_data = {
+            'mobile_number': cleaned_number,
+            'full_name': template_user.full_name,
+            'user_type': user_type,
+            'email': template_user.email,
+            'address': template_user.address,
+            'city': template_user.city,
+            'state': template_user.state,
+            'pincode': template_user.pincode,
+            'latitude': template_user.latitude,
+            'longitude': template_user.longitude,
+            'registration_method': 'phone',
+            'is_mobile_verified': True
+        }
+        
+        if user_type == 'smart_buyer' and buyer_category:
+            new_user_data['buyer_category'] = buyer_category
+        
+        try:
+            new_user = CustomUser.objects.create(**new_user_data)
+            new_user.set_unusable_password()
+            new_user.save()
+            
+            # Generate token for the new user
+            if not new_user.is_active:
+                return Response({'success': False, 'message': 'Account suspended'}, status=status.HTTP_403_FORBIDDEN)
+
+            token, created = Token.objects.get_or_create(user=new_user)
+            user_session = UserSession.objects.create(user=new_user)
+            
+            return Response({
+                'success': True,
+                'message': f'New {new_user.get_role_display()} account created successfully using existing profile!',
+                'user': UserProfileSerializer(new_user).data,
+                'token': token.key,
+                'session_token': user_session.session_token,
+                'profile_complete': new_user.is_profile_complete
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Quick role registration failed: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Failed to create new role account'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @extend_schema(responses={200: dict})
@@ -413,6 +552,16 @@ class PhoneLoginView(APIView):
         # OTP as used in that case.
         if not serializer.is_valid():
             errors = serializer.errors
+            
+            # Check if user needs to select from multiple accounts
+            if 'user_selection_required' in errors:
+                return Response({
+                    'success': False,
+                    'user_selection_required': True,
+                    'available_accounts': errors.get('available_accounts', []),
+                    'message': errors.get('user_selection_required', ['Multiple accounts found. Please select which account to login to.'])[0]
+                }, status=status.HTTP_200_OK)  # Changed to 200 OK so frontend treats it as valid response
+            
             # If validation failed because profile is incomplete, return a
             # specific message so frontend can redirect to signup/profile
             # completion flow.
@@ -459,6 +608,30 @@ class PhoneLoginView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+@extend_schema(responses={200: dict})
+class CheckRoleAvailabilityView(APIView):
+    """Check what roles are available for a mobile number"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        serializer = RoleAvailabilitySerializer(data=request.data)
+        
+        if serializer.is_valid():
+            mobile_number = serializer.validated_data['mobile_number']
+            role_info = CustomUser.get_available_roles_for_mobile(mobile_number)
+            
+            return Response({
+                'success': True,
+                'mobile_number': mobile_number,
+                'role_availability': role_info
+            }, status=status.HTTP_200_OK)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
 # UTILITY VIEWS
 @extend_schema(responses={200: dict})
 class CheckUserExistsView(APIView):
@@ -484,19 +657,29 @@ class CheckUserExistsView(APIView):
             elif cleaned_number.startswith('91'):
                 cleaned_number = cleaned_number[2:]
             
-            try:
-                user = CustomUser.objects.get(mobile_number=cleaned_number)
+            users = CustomUser.objects.filter(mobile_number=cleaned_number)
+            role_info = CustomUser.get_available_roles_for_mobile(cleaned_number)
+            
+            if users.exists():
+                complete_users = users.filter(is_profile_complete=True)
+                incomplete_users = users.filter(is_profile_complete=False)
+                
                 response_data.update({
                     'phone_user_exists': True,
                     'mobile_number': cleaned_number,
-                    'profile_complete': user.is_profile_complete,
-                    'can_login': user.is_profile_complete
+                    'users_count': users.count(),
+                    'complete_users_count': complete_users.count(),
+                    'incomplete_users_count': incomplete_users.count(),
+                    'can_login': complete_users.exists(),
+                    'can_register_new_role': bool(role_info['available_roles']),
+                    'role_availability': role_info
                 })
-            except CustomUser.DoesNotExist:
+            else:
                 response_data.update({
                     'phone_user_exists': False,
                     'mobile_number': cleaned_number,
-                    'can_register': True
+                    'can_register': True,
+                    'role_availability': role_info
                 })
         
         if email:

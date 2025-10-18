@@ -5,13 +5,13 @@ from .api.views import (
     SendOTPView, VerifyPhoneRegistrationView,
     
     # Registration Flow
-    CompleteProfileView, CompleteProfileWithSocialView,
+    CompleteProfileView, CompleteProfileWithSocialView, QuickRoleRegistrationView,
     
     # Login Options
     PhoneLoginView,
     
     # User Management
-    UserLogoutView, UserProfileView, CurrentUserView, CheckUserExistsView,
+    UserLogoutView, UserProfileView, CurrentUserView, CheckUserExistsView, CheckRoleAvailabilityView,
     user_dashboard, user_statistics
     , OAuthCallbackView, OAuthTokenView
     , weather_view
@@ -34,6 +34,8 @@ urlpatterns = [
     path('complete-profile/', CompleteProfileView.as_view(), name='complete_profile'),
     # Step 3b: Complete profile with social account linking
     path('complete-profile-with-social/', CompleteProfileWithSocialView.as_view(), name='complete_profile_with_social'),
+    # Quick role registration using existing profile
+    path('quick-role-registration/', QuickRoleRegistrationView.as_view(), name='quick_role_registration'),
     
     # LOGIN OPTIONS
     path('login/phone/', PhoneLoginView.as_view(), name='phone_login'),
@@ -46,6 +48,7 @@ urlpatterns = [
     
     # UTILITY ENDPOINTS
     path('check-user/', CheckUserExistsView.as_view(), name='check_user'),
+    path('check-roles/', CheckRoleAvailabilityView.as_view(), name='check_roles'),
     path('statistics/', user_statistics, name='statistics'),
     path('weather/', weather_view, name='weather'),
     

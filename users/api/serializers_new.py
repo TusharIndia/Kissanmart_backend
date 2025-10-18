@@ -6,7 +6,7 @@ import re
 
 
 class PhoneRegistrationSerializer(serializers.Serializer):
-    """Step 1: Phone number registration and verification"""
+    """Step 1: Phone number registration and verification - now supports multi-role"""
     mobile_number = serializers.CharField(max_length=15)
     
     def validate_mobile_number(self, value):
@@ -22,36 +22,25 @@ class PhoneRegistrationSerializer(serializers.Serializer):
         elif cleaned_number.startswith('91'):
             cleaned_number = cleaned_number[2:]
         
-        if CustomUser.objects.filter(mobile_number=cleaned_number).exists():
-            raise serializers.ValidationError("User with this mobile number already exists")
+        # No longer check for existing users since we support multi-role
+        # The role availability check will be done separately
         
         return cleaned_number
 
 
 class ProfileCompletionSerializer(serializers.ModelSerializer):
-    """Step 2: Complete user profile after phone verification with optional Google/Facebook linking"""
+    """Step 2: Complete user profile after phone verification - now supports multi-role validation"""
     mobile_number = serializers.CharField(max_length=15, write_only=True)
-    # Removed social token fields: linking should happen after profile completion via a dedicated endpoint
     
     class Meta:
         model = CustomUser
         fields = [
             'mobile_number', 'full_name', 'user_type', 'buyer_category', 'email',
             'address', 'city', 'state', 'pincode', 'latitude', 'longitude',
-            # social linking removed from profile completion
         ]
         extra_kwargs = {
             'mobile_number': {'write_only': True, 'required': True},
-            'full_name': {'required': True},
-            'user_type': {'required': True},
-            'address': {'required': True},
-            'city': {'required': True},
-            'state': {'required': True},
-            'pincode': {'required': True},
-            'latitude': {'required': True},
-            'longitude': {'required': True},
             'email': {'required': False},
-            # social linking removed from profile completion
         }
     
     def validate_mobile_number(self, value):
@@ -87,8 +76,18 @@ class ProfileCompletionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         user_type = attrs.get('user_type')
         buyer_category = attrs.get('buyer_category')
-    # social tokens are not part of the profile completion payload
-        # require latitude/longitude for all users
+        mobile_number = attrs.get('mobile_number')
+        
+        # Validate required fields that have defaults in the model
+        required_fields = ['full_name', 'user_type', 'address', 'city', 'state', 'pincode']
+        for field in required_fields:
+            value = attrs.get(field)
+            if not value or (isinstance(value, str) and not value.strip()):
+                raise serializers.ValidationError({
+                    field: f'{field.replace("_", " ").title()} is required'
+                })
+        
+        # Require latitude/longitude for all users
         latitude = attrs.get('latitude')
         longitude = attrs.get('longitude')
         if latitude is None or longitude is None:
@@ -107,9 +106,28 @@ class ProfileCompletionSerializer(serializers.ModelSerializer):
         if user_type == 'smart_seller' and buyer_category:
             attrs['buyer_category'] = None
         
-        # No social token validation here
-        attrs.pop('mobile_number', None)
+        # Multi-role validation: Check if this specific role combination already exists
+        if mobile_number and user_type:
+            existing_query = CustomUser.objects.filter(
+                mobile_number=mobile_number,
+                user_type=user_type
+            )
+            
+            if user_type == 'smart_buyer' and buyer_category:
+                existing_query = existing_query.filter(buyer_category=buyer_category)
+                
+            if existing_query.exists():
+                if user_type == 'smart_seller':
+                    raise serializers.ValidationError({
+                        'user_type': 'A Seller account with this mobile number already exists'
+                    })
+                else:
+                    category_display = dict(CustomUser.BUYER_CATEGORY_CHOICES).get(buyer_category, buyer_category)
+                    raise serializers.ValidationError({
+                        'buyer_category': f'A Buyer ({category_display}) account with this mobile number already exists'
+                    })
         
+        attrs.pop('mobile_number', None)
         return attrs
     
     def verify_google_token(self, token):
@@ -224,13 +242,17 @@ class OTPVerificationSerializer(serializers.Serializer):
 
 
 class PhoneLoginSerializer(serializers.Serializer):
-    """Serializer for phone/OTP based login"""
+    """Serializer for phone/OTP based login - now supports multi-role selection"""
     mobile_number = serializers.CharField(max_length=15)
     otp_code = serializers.CharField(max_length=6)
+    user_type = serializers.CharField(max_length=20, required=False)
+    buyer_category = serializers.CharField(max_length=20, required=False)
     
     def validate(self, attrs):
         mobile_number = attrs.get('mobile_number')
         otp_code = attrs.get('otp_code')
+        user_type = attrs.get('user_type')
+        buyer_category = attrs.get('buyer_category')
         
         cleaned_number = re.sub(r'[^\d+]', '', mobile_number)
         if cleaned_number.startswith('+91'):
@@ -240,23 +262,72 @@ class PhoneLoginSerializer(serializers.Serializer):
         
         attrs['mobile_number'] = cleaned_number
         
-        try:
-            user = CustomUser.objects.get(mobile_number=cleaned_number)
-            if not user.is_profile_complete:
-                raise serializers.ValidationError({
-                    'profile': 'Please complete your profile first'
-                })
-            # Prevent login for suspended / deactivated users
-            if not user.is_active:
-                raise serializers.ValidationError({
-                    'account': 'This account has been suspended'
-                })
-            attrs['user'] = user
-        except CustomUser.DoesNotExist:
+        # Get all users with this mobile number
+        users = CustomUser.objects.filter(mobile_number=cleaned_number)
+        
+        if not users.exists():
             raise serializers.ValidationError({
-                'mobile_number': 'User with this mobile number does not exist'
+                'mobile_number': 'No account found with this mobile number'
             })
         
+        # If user_type and buyer_category are provided, find specific user
+        target_user = None
+        if user_type:
+            if user_type == 'smart_seller':
+                target_user = users.filter(user_type='smart_seller').first()
+            elif user_type == 'smart_buyer' and buyer_category:
+                target_user = users.filter(
+                    user_type='smart_buyer', 
+                    buyer_category=buyer_category
+                ).first()
+            
+            if not target_user:
+                if user_type == 'smart_seller':
+                    raise serializers.ValidationError({
+                        'user_type': 'No Seller account found with this mobile number'
+                    })
+                else:
+                    category_display = dict(CustomUser.BUYER_CATEGORY_CHOICES).get(buyer_category, buyer_category)
+                    raise serializers.ValidationError({
+                        'buyer_category': f'No Buyer ({category_display}) account found with this mobile number'
+                    })
+        else:
+            # If no specific role provided, check if there's only one account
+            if users.count() == 1:
+                target_user = users.first()
+            else:
+                # Multiple accounts exist, user must specify which role to login as
+                available_roles = []
+                for user in users:
+                    if user.user_type == 'smart_seller':
+                        available_roles.append({'type': 'smart_seller', 'category': None, 'display': 'Seller'})
+                    elif user.user_type == 'smart_buyer':
+                        category_display = dict(CustomUser.BUYER_CATEGORY_CHOICES).get(user.buyer_category, user.buyer_category)
+                        available_roles.append({
+                            'type': 'smart_buyer',
+                            'category': user.buyer_category,
+                            'display': f'Buyer ({category_display})'
+                        })
+                
+                raise serializers.ValidationError({
+                    'user_selection_required': 'Multiple accounts found. Please select which account to login to.',
+                    'available_accounts': available_roles
+                })
+        
+        if not target_user.is_profile_complete:
+            raise serializers.ValidationError({
+                'profile': 'Please complete your profile first'
+            })
+        
+        # Prevent login for suspended / deactivated users
+        if not target_user.is_active:
+            raise serializers.ValidationError({
+                'account': 'This account has been suspended'
+            })
+        
+        attrs['user'] = target_user
+        
+        # Verify OTP
         try:
             otp = OTP.objects.filter(
                 mobile_number=cleaned_number,
@@ -350,3 +421,23 @@ class ContactQueryListSerializer(serializers.ModelSerializer):
         model = ContactQuery
         fields = ['id', 'name', 'email', 'message', 'created_at', 'ip_address']
         read_only_fields = ['id', 'created_at', 'ip_address']
+
+
+class RoleAvailabilitySerializer(serializers.Serializer):
+    """Serializer for checking available roles for a mobile number"""
+    mobile_number = serializers.CharField(max_length=15)
+    
+    def validate_mobile_number(self, value):
+        cleaned_number = re.sub(r'[^\d+]', '', value)
+        
+        if not re.match(r'^\+?91?[6-9]\d{9}$', cleaned_number):
+            raise serializers.ValidationError(
+                "Please enter a valid Indian mobile number"
+            )
+        
+        if cleaned_number.startswith('+91'):
+            cleaned_number = cleaned_number[3:]
+        elif cleaned_number.startswith('91'):
+            cleaned_number = cleaned_number[2:]
+        
+        return cleaned_number

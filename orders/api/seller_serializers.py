@@ -91,23 +91,77 @@ class SellerOrderItemSerializer(serializers.ModelSerializer):
 class SellerCustomerInfoSerializer(serializers.ModelSerializer):
     """Basic customer information for seller"""
     
+    customer_email = serializers.SerializerMethodField()
+    customer_phone = serializers.SerializerMethodField()
+    
     class Meta:
         model = Order
         fields = ['customer_name', 'customer_email', 'customer_phone']
+    
+    def get_customer_email(self, obj):
+        """Return masked email for privacy"""
+        return 'kissansmartconnectinfo@gmail.com'
+    
+    def get_customer_phone(self, obj):
+        """Return masked phone for privacy"""
+        return 'XXXXXXXXXX'
 
 
 class SellerDeliveryAddressSerializer(serializers.ModelSerializer):
     """Delivery address information for seller"""
     
-    full_address = serializers.ReadOnlyField()
+    full_address = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+    address_line_1 = serializers.SerializerMethodField()
+    address_line_2 = serializers.SerializerMethodField()
+    city = serializers.SerializerMethodField()
+    state = serializers.SerializerMethodField()
+    pincode = serializers.SerializerMethodField()
+    landmark = serializers.SerializerMethodField()
     
     class Meta:
         model = DeliveryAddress
         fields = [
             'name', 'phone', 'address_line_1', 'address_line_2',
-            'city', 'state', 'pincode', 'landmark', 
-            'delivery_instructions', 'full_address'
+            'city', 'state', 'pincode', 'landmark', 'full_address'
         ]
+    
+    def get_full_address(self, obj):
+        """Return masked address for privacy"""
+        return "KissanSmart Connect Ground, Delhi"
+    
+    def get_name(self, obj):
+        """Return real customer name for delivery purposes"""
+        return obj.name
+    
+    def get_phone(self, obj):
+        """Return masked phone for privacy"""
+        return "XXXXXXXXXX"
+    
+    def get_address_line_1(self, obj):
+        """Return masked address line 1 for privacy"""
+        return "KissanSmart Connect Ground"
+    
+    def get_address_line_2(self, obj):
+        """Return masked address line 2 for privacy"""
+        return ""
+    
+    def get_city(self, obj):
+        """Return masked city for privacy"""
+        return "Delhi"
+    
+    def get_state(self, obj):
+        """Return masked state for privacy"""
+        return "Delhi"
+    
+    def get_pincode(self, obj):
+        """Return masked pincode for privacy"""
+        return "110001"
+    
+    def get_landmark(self, obj):
+        """Return masked landmark for privacy"""
+        return "Near KissanSmart Office"
 
 
 class SellerOrderListSerializer(serializers.ModelSerializer):
