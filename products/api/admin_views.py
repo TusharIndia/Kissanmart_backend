@@ -127,7 +127,7 @@ class AdminProductListView(AdminPermissionMixin, APIView):
         if search:
             queryset = queryset.filter(
                 Q(title__icontains=search) |
-                Q(category__icontains=search) |
+                Q(category__name__icontains=search) |
                 Q(crop__icontains=search) |
                 Q(variety__icontains=search) |
                 Q(seller__full_name__icontains=search) |
@@ -147,7 +147,7 @@ class AdminProductListView(AdminPermissionMixin, APIView):
         # Category filter
         category = request.query_params.get('category', '').strip()
         if category:
-            queryset = queryset.filter(category__icontains=category)
+            queryset = queryset.filter(category__name__icontains=category)
 
         # City filter
         city = request.query_params.get('city', '').strip()
@@ -199,7 +199,7 @@ class AdminProductListView(AdminPermissionMixin, APIView):
         valid_orderings = [
             'created_at', '-created_at', 'updated_at', '-updated_at',
             'price_per_unit', '-price_per_unit', 'quantity_available', '-quantity_available',
-            'title', '-title', 'category', '-category'
+            'title', '-title', 'category__name', '-category__name'
         ]
         if ordering in valid_orderings:
             queryset = queryset.order_by(ordering)

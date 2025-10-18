@@ -53,7 +53,7 @@ class AdminProductListSerializer(serializers.ModelSerializer):
     
     # Product details
     title = serializers.CharField(read_only=True)
-    category = serializers.CharField(read_only=True)
+    category = serializers.SerializerMethodField()
     crop = serializers.CharField(read_only=True)
     variety = serializers.CharField(read_only=True)
     grade = serializers.CharField(read_only=True)
@@ -122,6 +122,10 @@ class AdminProductListSerializer(serializers.ModelSerializer):
             return AdminProductImageSerializer(primary_image).data
         return None
 
+    def get_category(self, obj):
+        """Get category name from ForeignKey relationship"""
+        return obj.category.name if obj.category else None
+    
     def get_daysListed(self, obj):
         """Calculate how many days the product has been listed"""
         if obj.created_at:
@@ -138,7 +142,7 @@ class AdminProductDetailSerializer(serializers.ModelSerializer):
     # Product details
     title = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True)
-    category = serializers.CharField(read_only=True)
+    category = serializers.SerializerMethodField()
     crop = serializers.CharField(read_only=True)
     variety = serializers.CharField(read_only=True)
     grade = serializers.CharField(read_only=True)
@@ -228,6 +232,10 @@ class AdminProductDetailSerializer(serializers.ModelSerializer):
     def get_totalImages(self, obj):
         return obj.images.count()
 
+    def get_category(self, obj):
+        """Get category name from ForeignKey relationship"""
+        return obj.category.name if obj.category else None
+    
     def get_daysListed(self, obj):
         if obj.created_at:
             delta = timezone.now() - obj.created_at

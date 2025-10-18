@@ -376,11 +376,11 @@ def list_products(request):
             lon = str(user_lon)
 
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q) | Q(crop__icontains=q) | Q(variety__icontains=q))
+        qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q) | Q(crop__icontains=q) | Q(variety__icontains=q))
     if crop:
         qs = qs.filter(crop__iexact=crop)
     if category:
-        qs = qs.filter(category__iexact=category)
+        qs = qs.filter(category__name__iexact=category)
     if priceType:
         qs = qs.filter(price_type__iexact=priceType)
     if minPrice:
