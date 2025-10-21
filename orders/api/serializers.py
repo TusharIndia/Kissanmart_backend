@@ -8,6 +8,7 @@ from ..models import (
     Order, OrderItem, DeliveryAddress, OrderTracking, 
     OrderStatusHistory, OrderRefund, OrderAnalytics, OrderCancellationRequest
 )
+from ..models import PaymentModeCharge
 from products.models import Product
 from cart.models import Cart, CartItem
 
@@ -231,7 +232,7 @@ class OrderCreateSerializer(serializers.Serializer):
     
     items = OrderItemCreateSerializer(many=True)
     delivery_address = DeliveryAddressSerializer()
-    payment_method = serializers.ChoiceField(choices=['upi', 'netbanking', 'card', 'cod'])
+    payment_method = serializers.ChoiceField(choices=['upi', 'netbanking', 'card', 'wallet', 'cod'])
     coupon_code = serializers.CharField(max_length=50, required=False, allow_blank=True)
     notes = serializers.CharField(max_length=1000, required=False, allow_blank=True)
     expected_delivery_date = serializers.DateField(required=False)
@@ -325,17 +326,30 @@ class OrderCreateSerializer(serializers.Serializer):
         order.shipping_charges = Decimal('0.00') if total_amount > 500 else Decimal('50.00')
         
         # Calculate fees if not COD
+        # Note: we no longer pass Razorpay gateway fee to the customer. Only platform_fee and
+        # an admin-configured payment_mode_charge (portal charge) are applied. razorpay_fee is kept
+        # as 0.00 for bookkeeping.
+        # Determine platform fee percentage from admin-configured PaymentModeCharge.
+        # Platform fee is applied as percentage over (subtotal + shipping_charges).
+        from ..models import PaymentModeCharge
         if order.payment_method != 'cod':
-            from ..razorpay_service import RazorpayService
-            # Calculate Razorpay fee based on payment method
-            order.razorpay_fee = RazorpayService.calculate_razorpay_fee(order.subtotal, order.payment_method)
-            # Calculate platform fee (1% of subtotal)
-            order.platform_fee = RazorpayService.calculate_platform_fee(order.subtotal, Decimal('1.0'))
+            order.razorpay_fee = Decimal('0.00')
+            try:
+                pct = PaymentModeCharge.get_percentage_for_mode(order.payment_method)
+                platform_base = order.subtotal + order.shipping_charges
+                order.platform_fee = (platform_base * (Decimal(str(pct)) / Decimal('100.0'))).quantize(Decimal('0.01'))
+            except Exception:
+                order.platform_fee = Decimal('0.00')
         else:
             order.razorpay_fee = Decimal('0.00')
             order.platform_fee = Decimal('0.00')
-        
-        order.total_amount = order.subtotal + order.shipping_charges + order.tax_amount + order.razorpay_fee + order.platform_fee - order.discount_amount
+
+        # No separate payment_mode_charge is used in this mode
+        order.payment_mode_charge = Decimal('0.00')
+
+        # Final total: subtotal + shipping + tax + platform_fee - discount
+        order.total_amount = order.subtotal + order.shipping_charges + order.tax_amount + order.platform_fee - order.discount_amount
+
         order.save()
         
         # Create initial status history
@@ -467,7 +481,7 @@ class OrderReorderSerializer(serializers.Serializer):
         allow_empty=True
     )
     payment_method = serializers.ChoiceField(
-        choices=['upi', 'netbanking', 'card', 'cod'],
+        choices=['upi', 'netbanking', 'card', 'wallet', 'cod'],
         required=False
     )
     

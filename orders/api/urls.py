@@ -54,6 +54,11 @@ urlpatterns = [
     path('admin/orders/<uuid:order_uuid>/', admin_views.AdminOrderDetailView.as_view(), name='admin_order_detail'),
     path('admin/analytics/', admin_views.AdminOrderAnalyticsView.as_view(), name='admin_analytics'),
     path('admin/dashboard/', admin_views.AdminDashboardStatsView.as_view(), name='admin_dashboard'),
+    # Payment mode charges management
+    path('admin/payment-charges/', admin_views.AdminPaymentModeChargeListCreate.as_view(), name='admin_payment_charges'),
+    path('admin/payment-charges/<int:pk>/', admin_views.AdminPaymentModeChargeDetail.as_view(), name='admin_payment_charge_detail'),
+    # Public payment charges for frontend display
+    path('payment-charges/', admin_views.PublicPaymentModeChargesView.as_view(), name='public_payment_charges'),
     
     # Cancellation & Refund APIs
     path('<uuid:order_uuid>/cancellation/eligibility/', cancellation_views.CheckOrderCancellationEligibilityView.as_view(), name='cancellation_eligibility'),

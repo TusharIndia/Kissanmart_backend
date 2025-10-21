@@ -62,9 +62,8 @@ class SendOTPView(APIView):
         if serializer.is_valid():
             mobile_number = serializer.validated_data['mobile_number']
             otp = OTP.objects.create(mobile_number=mobile_number)
-            
+            # print(otp.otp_code)  # For testing purposes; remove in production
             sms_sent = self.send_sms(mobile_number, otp.otp_code)
-            
             if sms_sent:
                 return Response({
                     'success': True,

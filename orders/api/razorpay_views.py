@@ -60,7 +60,29 @@ class CreateRazorpayOrderView(APIView):
                         # Update order with selected shipping charges
                         with transaction.atomic():
                             order.shipping_charges = shipping_charges
-                            order.total_amount = order.subtotal + order.shipping_charges + order.tax_amount - order.discount_amount
+                            # Recalculate platform_fee and payment_mode_charge using the updated shipping so the
+                            # Razorpay amount reflects portal charges applied to the final payable base.
+                            # Recompute platform fee using admin-configured PaymentModeCharge percentage
+                            from ..models import PaymentModeCharge
+                            try:
+                                pct = PaymentModeCharge.get_percentage_for_mode(order.payment_method)
+                                platform_base = order.subtotal + order.shipping_charges
+                                order.platform_fee = (platform_base * (Decimal(str(pct)) / Decimal('100.0'))).quantize(Decimal('0.01'))
+                            except Exception:
+                                order.platform_fee = Decimal('0.00')
+
+                            # No portal/payment-mode charge is used separately; razorpay fee bookkeeping remains zero
+                            order.payment_mode_charge = Decimal('0.00')
+                            order.razorpay_fee = Decimal('0.00')
+
+                            # Recalculate final total_amount to be sent to Razorpay
+                            order.total_amount = (
+                                order.subtotal
+                                + order.shipping_charges
+                                + order.tax_amount
+                                + order.platform_fee
+                                - order.discount_amount
+                            )
                             order.shiprocket_courier_name = courier_name
                             order.save()
                             

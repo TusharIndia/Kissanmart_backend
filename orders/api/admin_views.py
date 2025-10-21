@@ -11,6 +11,8 @@ from decimal import Decimal
 from ..models import (
     Order, OrderItem, OrderAnalytics, OrderStatusHistory
 )
+from ..models import PaymentModeCharge
+from rest_framework import serializers
 from .serializers import (
     OrderListSerializer, OrderDetailSerializer, OrderUpdateSerializer,
     OrderAnalyticsSerializer, OrderStatisticsSerializer
@@ -145,6 +147,12 @@ class AdminOrderDetailView(APIView):
                 'email': order.user.email,
                 'user_type': order.user.user_type
             }
+            # Ensure platform_fee is visible in admin response (always include for accounting)
+            try:
+                order_data['platform_fee'] = str(order_data.get('platform_fee', order.platform_fee))
+            except Exception:
+                # Fallback to model value
+                order_data['platform_fee'] = str(getattr(order, 'platform_fee', '0.00'))
             
             return Response({
                 'success': True,
@@ -365,3 +373,70 @@ class AdminDashboardStatsView(APIView):
             'success': True,
             'dashboard_stats': dashboard_stats
         })
+
+
+class PaymentModeChargeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentModeCharge
+        fields = ['id', 'mode', 'percentage', 'created_at', 'updated_at']
+
+
+class AdminPaymentModeChargeListCreate(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        if not check_admin_permission(request):
+            return Response({'success': False, 'message': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        charges = PaymentModeCharge.objects.all()
+        serializer = PaymentModeChargeSerializer(charges, many=True)
+        return Response({'success': True, 'charges': serializer.data})
+
+    def post(self, request):
+        if not check_admin_permission(request):
+            return Response({'success': False, 'message': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = PaymentModeChargeSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'success': True, 'charge': serializer.data})
+        return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminPaymentModeChargeDetail(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get_object(self, pk):
+        return get_object_or_404(PaymentModeCharge, pk=pk)
+
+    def get(self, request, pk):
+        if not check_admin_permission(request):
+            return Response({'success': False, 'message': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        charge = self.get_object(pk)
+        serializer = PaymentModeChargeSerializer(charge)
+        return Response({'success': True, 'charge': serializer.data})
+
+    def put(self, request, pk):
+        if not check_admin_permission(request):
+            return Response({'success': False, 'message': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        charge = self.get_object(pk)
+        serializer = PaymentModeChargeSerializer(charge, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'success': True, 'charge': serializer.data})
+        return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        if not check_admin_permission(request):
+            return Response({'success': False, 'message': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        charge = self.get_object(pk)
+        charge.delete()
+        return Response({'success': True, 'message': 'Deleted'})
+
+
+class PublicPaymentModeChargesView(APIView):
+    """Public read-only endpoint to fetch payment-mode percentages for frontend use."""
+    permission_classes = []  # Allow any (public)
+
+    def get(self, request):
+        charges = PaymentModeCharge.objects.all()
+        serializer = PaymentModeChargeSerializer(charges, many=True)
+        return Response({'success': True, 'charges': serializer.data})

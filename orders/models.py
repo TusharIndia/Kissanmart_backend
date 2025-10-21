@@ -125,6 +125,7 @@ class Order(models.Model):
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Tax amount")
     razorpay_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Razorpay payment gateway fee")
     platform_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Platform fee (1% of order value)")
+    payment_mode_charge = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), help_text="Additional charge based on chosen payment mode")
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, help_text="Final total amount")
     
     # Shiprocket tracking fields
@@ -195,9 +196,22 @@ class Order(models.Model):
         
         # Calculate shipping (free for orders above 500)
         self.shipping_charges = Decimal('0.00') if self.subtotal > 500 else Decimal('50.00')
-        
-        # Calculate total
-        self.total_amount = self.subtotal + self.shipping_charges + self.tax_amount + self.razorpay_fee + self.platform_fee - self.discount_amount
+        # Calculate platform fee on subtotal + shipping using admin-configured percentage if available
+        platform_base = self.subtotal + self.shipping_charges
+        try:
+            from .models import PaymentModeCharge as _PMC  # local alias to avoid linter warnings
+            pct = PaymentModeCharge.get_percentage_for_mode(getattr(self, 'payment_method', ''))
+            self.platform_fee = (platform_base * (Decimal(str(pct)) / Decimal('100.0')))
+        except Exception:
+            # Fallback to 1% if admin value is unavailable
+            self.platform_fee = (platform_base * Decimal('0.01'))
+
+        # razorpay_fee and payment_mode_charge are not passed to customer
+        self.razorpay_fee = Decimal('0.00')
+        self.payment_mode_charge = Decimal('0.00')
+
+        # Final total for customer: subtotal + shipping + tax + platform_fee - discount
+        self.total_amount = self.subtotal + self.shipping_charges + self.tax_amount + self.platform_fee - self.discount_amount
     
     @property
     def items_count(self):
@@ -417,6 +431,38 @@ class OrderStatusHistory(models.Model):
     def __str__(self):
         return f"Order {self.order.id} - {self.status} at {self.timestamp}"
 
+class PaymentModeCharge(models.Model):
+    """Admin-configurable percentage charge per payment mode.
+
+    percentage is stored as a Decimal representing percent (e.g., 1.5 == 1.5%).
+    """
+    PAYMENT_MODE_CHOICES = [
+        ('upi', 'UPI'),
+        ('netbanking', 'Net Banking'),
+        ('card', 'Credit/Debit Card'),
+        ('wallet', 'Digital Wallet'),
+        ('cod', 'Cash on Delivery'),
+    ]
+
+    mode = models.CharField(max_length=20, choices=PAYMENT_MODE_CHOICES, unique=True)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'), help_text='Percentage charge to apply for this payment mode')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Payment Mode Charge'
+        verbose_name_plural = 'Payment Mode Charges'
+
+    def __str__(self):
+        return f"{self.get_mode_display()} - {self.percentage}%"
+
+    @staticmethod
+    def get_percentage_for_mode(mode):
+        try:
+            pm = PaymentModeCharge.objects.get(mode=mode)
+            return pm.percentage
+        except PaymentModeCharge.DoesNotExist:
+            return Decimal('0.00')
 
 class OrderRefund(models.Model):
     """Order refund information"""
