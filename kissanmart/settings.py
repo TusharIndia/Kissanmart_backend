@@ -44,7 +44,7 @@ ALLOWED_HOSTS = ['api.kissansmartconnect.com','kissansmartconnect.com']
 if os.getenv('DJANGO_ALLOWED_HOSTS'):
     ALLOWED_HOSTS.extend(os.getenv('DJANGO_ALLOWED_HOSTS').split(','))
 else:
-    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1', 'testserver'])
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1', 'testserver','66.116.198.25'])
 
 
 # Application definition
