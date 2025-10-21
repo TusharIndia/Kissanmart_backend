@@ -57,7 +57,7 @@ class CustomUser(AbstractUser):
 
     # Anonymous identifier for use in community chat and other anonymized views
     # Allow null initially so migrations can populate existing rows non-interactively.
-    anonymous_id = models.UUIDField(default=uuid.uuid4, editable=False, null=True, unique=False)
+    anonymous_id = models.UUIDField(default=uuid.uuid4, null=True, unique=True)
     
     # Address fields - temporarily nullable for migration, will be required in serializers
     address = models.TextField(blank=True, default='')  
