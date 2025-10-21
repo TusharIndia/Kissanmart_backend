@@ -17,3 +17,4 @@ class Migration(migrations.Migration):
             field=models.UUIDField(default=uuid.uuid4, null=True, unique=True),
         ),
     ]
+# hide

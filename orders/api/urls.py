@@ -58,7 +58,7 @@ urlpatterns = [
     path('admin/payment-charges/', admin_views.AdminPaymentModeChargeListCreate.as_view(), name='admin_payment_charges'),
     path('admin/payment-charges/<int:pk>/', admin_views.AdminPaymentModeChargeDetail.as_view(), name='admin_payment_charge_detail'),
     # Public payment charges for frontend display
-    path('payment-charges/', admin_views.PublicPaymentModeChargesView.as_view(), name='public_payment_charges'),
+    path('payment-charges/', admin_views.PublicPaymentModeChargesView.as_view(), name='public_payment_charges'), # Public API for payment mode charges
     
     # Cancellation & Refund APIs
     path('<uuid:order_uuid>/cancellation/eligibility/', cancellation_views.CheckOrderCancellationEligibilityView.as_view(), name='cancellation_eligibility'),
