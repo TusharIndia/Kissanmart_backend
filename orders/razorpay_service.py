@@ -177,6 +177,66 @@ class RazorpayService:
                 'error': str(e)
             }
     
+    @staticmethod
+    def calculate_razorpay_fee(amount, payment_method='card'):
+        """
+        Calculate Razorpay fee based on payment method and amount
+        
+        Args:
+            amount (Decimal): Order amount in rupees
+            payment_method (str): Payment method (card, upi, netbanking, etc.)
+            
+        Returns:
+            Decimal: Razorpay fee amount
+        """
+        amount = Decimal(str(amount))
+        
+        # Razorpay fee structure (as of 2024)
+        if payment_method == 'upi':
+            # UPI: Free for amounts below ₹2000, ₹2 + GST above ₹2000
+            if amount >= 2000:
+                fee = Decimal('2.00')
+                gst = fee * Decimal('0.18')  # 18% GST
+                return fee + gst
+            return Decimal('0.00')
+        
+        elif payment_method == 'netbanking':
+            # Net Banking: 2% + GST (max ₹10,000)
+            fee = amount * Decimal('0.02')
+            max_fee = Decimal('10000.00')
+            fee = min(fee, max_fee)
+            gst = fee * Decimal('0.18')
+            return fee + gst
+        
+        elif payment_method in ['card', 'wallet']:
+            # Cards/Wallets: 2% + GST
+            fee = amount * Decimal('0.02')
+            gst = fee * Decimal('0.18')
+            return fee + gst
+        
+        else:
+            # Default to 2% + GST for unknown methods
+            fee = amount * Decimal('0.02')
+            gst = fee * Decimal('0.18')
+            return fee + gst
+    
+    @staticmethod
+    def calculate_platform_fee(amount, fee_percentage=Decimal('1.0')):
+        """
+        Calculate platform fee (1% of order value)
+        
+        Args:
+            amount (Decimal): Order amount in rupees
+            fee_percentage (Decimal): Fee percentage (default 1%)
+            
+        Returns:
+            Decimal: Platform fee amount
+        """
+        amount = Decimal(str(amount))
+        fee_percentage = Decimal(str(fee_percentage))
+        
+        return amount * (fee_percentage / 100)
+    
     def capture_payment(self, payment_id, amount):
         """
         Capture a payment (for manual capture mode)

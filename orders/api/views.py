@@ -232,6 +232,13 @@ class CancelOrderView(APIView):
             order = Order.objects.get(uuid=order_uuid, user=request.user)
             
             # Check if order can be cancelled
+            # Disallow cancellations for Cash on Delivery orders
+            if getattr(order, 'payment_method', None) == 'cod':
+                return Response({
+                    'success': False,
+                    'message': 'Cash on Delivery orders cannot be cancelled'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             if not order.can_be_cancelled:
                 return Response({
                     'success': False,
