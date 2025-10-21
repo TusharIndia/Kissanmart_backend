@@ -46,4 +46,5 @@ try:
 except Exception:
 	# If ASGI/Channels aren't available, fall back to exposing WSGI application
 	# as `application` so imports that expect it still work.
+	
 	application = wsgi_application
