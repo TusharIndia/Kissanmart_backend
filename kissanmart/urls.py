@@ -39,5 +39,10 @@ urlpatterns += [
     path('api/auth/oauth/link/', (LinkSocialView.as_view()), name='oauth_link_alias'),
 ]
 
+# Chat API (messages retrieval)
+urlpatterns += [
+    path('api/chat/', include('chat.api.urls')),
+]
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

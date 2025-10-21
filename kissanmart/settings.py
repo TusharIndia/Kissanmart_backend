@@ -65,6 +65,8 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.facebook',
     'users',
+    'channels',
+    'chat',
     'products',
     'cart',
     'orders',
@@ -143,14 +145,14 @@ DATABASES = {}
 
 DATABASES = {
     'default': {
-        # 'ENGINE': 'django.db.backends.sqlite3',
-        'ENGINE': 'django.db.backends.postgresql',
-        # 'NAME': BASE_DIR / 'db.sqlite3',
-        'NAME': os.getenv('DATABASE_NAME'),
-        'USER': os.getenv('DATABASE_USER'),
-        'PASSWORD': os.getenv('DATABASE_PASSWORD'),
-        'HOST': os.getenv('DATABASE_HOST', 'localhost'),
-        'PORT': os.getenv('DATABASE_PORT', '5432'),
+        'ENGINE': 'django.db.backends.sqlite3',
+        # 'ENGINE': 'django.db.backends.postgresql',
+        'NAME': BASE_DIR / 'db.sqlite3',
+        # 'NAME': os.getenv('DATABASE_NAME'),
+        # 'USER': os.getenv('DATABASE_USER'),
+        # 'PASSWORD': os.getenv('DATABASE_PASSWORD'),
+        # 'HOST': os.getenv('DATABASE_HOST', 'localhost'),
+        # 'PORT': os.getenv('DATABASE_PORT', '5432'),
     }
 }
 
@@ -449,3 +451,12 @@ if os.getenv('DJANGO_PRODUCTION', '').lower() in ('1', 'true', 'yes'):
     except Exception:
         # If production settings fail to import, continue with base settings
         pass
+
+# Django Channels configuration (use in-memory layer for development and simple deployments)
+ASGI_APPLICATION = 'kissanmart.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    }
+}

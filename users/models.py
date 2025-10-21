@@ -4,6 +4,7 @@ from django.utils import timezone
 from datetime import timedelta
 import random
 import string
+import uuid
 
 class CustomUser(AbstractUser):
     USER_TYPE_CHOICES = [
@@ -53,6 +54,10 @@ class CustomUser(AbstractUser):
     
     # Profile fields
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
+
+    # Anonymous identifier for use in community chat and other anonymized views
+    # Allow null initially so migrations can populate existing rows non-interactively.
+    anonymous_id = models.UUIDField(default=uuid.uuid4, editable=False, null=True, unique=False)
     
     # Address fields - temporarily nullable for migration, will be required in serializers
     address = models.TextField(blank=True, default='')  
