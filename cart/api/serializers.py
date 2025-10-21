@@ -58,10 +58,11 @@ class CartItemSerializer(serializers.ModelSerializer):
                         'quantity': f"Only {product.quantity_available} {product.unit} available"
                     })
                 
-                # Check minimum order quantity
-                if product.min_order_quantity and quantity < product.min_order_quantity:
+                # Check minimum order quantity (treat missing/None as 1)
+                moq = product.min_order_quantity if product.min_order_quantity is not None else Decimal('1')
+                if quantity < moq:
                     raise serializers.ValidationError({
-                        'quantity': f"Minimum order quantity is {product.min_order_quantity} {product.unit}"
+                        'quantity': f"Minimum order quantity is {moq} {product.unit}"
                     })
                     
             except Product.DoesNotExist:
@@ -173,10 +174,11 @@ class AddToCartSerializer(serializers.Serializer):
                     'quantity': f"Only {available} {product.unit} more can be added to cart"
                 })
             
-            # Check minimum order quantity
-            if product.min_order_quantity and total_quantity < product.min_order_quantity:
+            # Check minimum order quantity (treat missing/None as 1)
+            moq = product.min_order_quantity if product.min_order_quantity is not None else Decimal('1')
+            if total_quantity < moq:
                 raise serializers.ValidationError({
-                    'quantity': f"Minimum order quantity is {product.min_order_quantity} {product.unit}"
+                    'quantity': f"Minimum order quantity is {moq} {product.unit}"
                 })
                 
         except Product.DoesNotExist:

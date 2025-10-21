@@ -167,6 +167,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     availableQuantity = serializers.DecimalField(source='quantity_available', max_digits=12, decimal_places=3)
     quantityUnit = serializers.SerializerMethodField()
     pricePerUnit = serializers.DecimalField(source='price_per_unit', max_digits=12, decimal_places=2)
+    minOrderQuantity = serializers.DecimalField(source='min_order_quantity', max_digits=12, decimal_places=3, read_only=True)
     priceCurrency = serializers.CharField(source='price_currency', allow_null=True, required=False)
     priceType = serializers.CharField(source='price_type', allow_null=True, required=False)
     marketPriceSource = serializers.CharField(source='market_price_source', allow_null=True, required=False)
@@ -186,7 +187,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'farmerId', 'title', 'description', 'category', 'crop', 'variety', 'grade',
-            'availableQuantity', 'quantityUnit', 'pricePerUnit', 'priceCurrency', 'priceType',
+            'availableQuantity', 'quantityUnit', 'pricePerUnit', 'minOrderQuantity', 'priceCurrency', 'priceType',
             'marketPriceSource', 'mandiPriceReference', 'location', 'buyerCategoryVisibility',
             'images', 'pexelsImageUrl', 'status', 'createdAt', 'updatedAt', 'distanceMeters', 'seller'
         ]
@@ -254,13 +255,15 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     marketPriceSource = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
     # Allow users to provide their own image URL that will be stored in pexels_image_url field
     pexelsImageUrl = serializers.URLField(write_only=True, required=False, allow_blank=True, allow_null=True)
+    # Accept camelCase alias from clients and map directly to model field via 'source'
+    minOrderQuantity = serializers.DecimalField(source='min_order_quantity', write_only=True, max_digits=12, decimal_places=3, required=False)
 
     class Meta:
         model = Product
         fields = [
             'title', 'description', 'category', 'crop', 'variety', 'grade',
             'available_quantity', 'availableQuantity', 'quantity_unit', 'quantityUnit',
-            'price_per_unit', 'pricePerUnit', 'price_currency', 'priceCurrency',
+            'price_per_unit', 'pricePerUnit', 'min_order_quantity', 'minOrderQuantity', 'price_currency', 'priceCurrency',
             'price_type', 'priceType', 'market_price_source', 'marketPriceSource',
             'location', 'buyerCategoryVisibility', 'images', 'metadata', 'pexelsImageUrl'
         ]
@@ -350,6 +353,9 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             validated_data['price_type'] = validated_data.pop('priceType')
         if 'marketPriceSource' in validated_data:
             validated_data['market_price_source'] = validated_data.pop('marketPriceSource')
+        # accept minOrderQuantity (camelCase) from some clients and map to DB field
+        if 'minOrderQuantity' in validated_data:
+            validated_data['min_order_quantity'] = validated_data.pop('minOrderQuantity')
 
         # Allow caller to pass seller via serializer.save(seller=user)
         # Prefer explicit seller kwarg passed to serializer.save(seller=...)
@@ -375,6 +381,10 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             unit_val = _normalize_unit(unit_val)
             validated_data['unit'] = unit_val
 
+        # Ensure min_order_quantity defaults to 1 in the seller provided unit if not supplied
+        if 'min_order_quantity' not in validated_data or validated_data.get('min_order_quantity') is None:
+            validated_data['min_order_quantity'] = Decimal('1')
+
         if unit_val and unit_val == 'QUINTAL':
             # convert available quantity (quintals -> kg)
             aq = validated_data.get('quantity_available')
@@ -393,7 +403,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
                 except Exception:
                     pass
 
-            # convert min_order_quantity if provided
+            # convert min_order_quantity (seller provided unit -> KG)
             moq = validated_data.get('min_order_quantity')
             if moq is not None:
                 try:
@@ -454,13 +464,15 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
     # modify title — we want category to be editable via PUT/PATCH instead of title.
     title = serializers.CharField(read_only=True)
     category = serializers.CharField(write_only=True, required=False)
+    # accept camelCase alias on update too
+    minOrderQuantity = serializers.DecimalField(source='min_order_quantity', write_only=True, max_digits=12, decimal_places=3, required=False)
 
     class Meta:
         model = Product
         fields = [
             'title', 'description', 'category', 'crop', 'variety', 'grade',
             'available_quantity', 'availableQuantity', 'quantity_unit', 'quantityUnit',
-            'price_per_unit', 'pricePerUnit', 'price_currency', 'priceCurrency',
+            'price_per_unit', 'pricePerUnit', 'min_order_quantity', 'minOrderQuantity', 'price_currency', 'priceCurrency',
             'price_type', 'priceType', 'market_price_source', 'marketPriceSource',
             'location', 'buyerCategoryVisibility', 'images', 'metadata', 'status',
             'pexelsImageUrl', 'quantity_available'
@@ -520,6 +532,9 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
             validated_data['price_type'] = validated_data.pop('priceType')
         if 'marketPriceSource' in validated_data:
             validated_data['market_price_source'] = validated_data.pop('marketPriceSource')
+        # accept minOrderQuantity (camelCase) from some clients and map to DB field
+        if 'minOrderQuantity' in validated_data:
+            validated_data['min_order_quantity'] = validated_data.pop('minOrderQuantity')
         
         # Handle user-provided image URL
         if user_image_url is not None:
@@ -533,6 +548,10 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
         if unit_val is not None:
             unit_val = _normalize_unit(unit_val)
             validated_data['unit'] = unit_val
+
+        # Ensure min_order_quantity defaults to 1 in the seller provided unit if not supplied
+        if 'min_order_quantity' not in validated_data or validated_data.get('min_order_quantity') is None:
+            validated_data['min_order_quantity'] = Decimal('1')
 
         if unit_val and unit_val == 'QUINTAL':
             # convert available_quantity if present
@@ -563,6 +582,8 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
 
         for attr, val in validated_data.items():
             setattr(instance, attr, val)
+
+        # (min_order_quantity was defaulted earlier in the flow)
 
         if location:
             instance.latitude = location.get('latitude', instance.latitude)

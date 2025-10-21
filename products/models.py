@@ -55,7 +55,8 @@ class Product(models.Model):
     quantity_available = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Total quantity available for sale.")
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default='KG', help_text="The unit of measurement (e.g., KG, Quintal).")
     price_per_unit = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Price in Rupees per unit.")
-    min_order_quantity = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, help_text="Optional minimum quantity a buyer must order.")
+    # Minimum order quantity: default to 1 when not provided by seller
+    min_order_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1, help_text="Optional minimum quantity a buyer must order. If seller doesn't provide, default is 1.")
     # compatibility JSON fields expected by API serializers
     mandi_price_reference = JSONField(null=True, blank=True, default=dict)
     buyer_category_visibility = JSONField(null=True, blank=True, default=list)

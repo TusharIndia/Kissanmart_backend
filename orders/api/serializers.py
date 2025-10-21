@@ -135,10 +135,11 @@ class OrderItemCreateSerializer(serializers.Serializer):
                 'quantity': f"Only {product.quantity_available} {product.unit} available"
             })
         
-        # Check minimum order quantity
-        if product.min_order_quantity and quantity < product.min_order_quantity:
+        # Check minimum order quantity (treat missing/None as 1)
+        moq = product.min_order_quantity if product.min_order_quantity is not None else Decimal('1')
+        if quantity < moq:
             raise serializers.ValidationError({
-                'quantity': f"Minimum order quantity is {product.min_order_quantity} {product.unit}"
+                'quantity': f"Minimum order quantity is {moq} {product.unit}"
             })
         
         # Set unit price from product if not provided
