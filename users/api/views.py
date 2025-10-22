@@ -46,6 +46,7 @@ from .serializers_new import (
     RoleAvailabilitySerializer
 )
 from drf_spectacular.utils import extend_schema
+from ..google_drive_upload import upload_image_to_drive
 
 logger = logging.getLogger(__name__)
 
@@ -1323,4 +1324,39 @@ class ContactQueryDeleteView(AdminPermissionMixin, APIView):
             return Response({
                 'success': False,
                 'message': 'Failed to delete contact query'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(responses={200: dict})
+class UploadImageToDriveView(APIView):
+    """Upload an image to Google Drive and return the public link"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        image = request.FILES.get('image')
+        if not image:
+            return Response({
+                'success': False,
+                'message': 'Image file is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Get file name from uploaded file
+            file_name = image.name or 'uploaded_image.jpg'
+            mimetype = image.content_type or 'image/jpeg'
+            
+            # Upload to Drive
+            link = upload_image_to_drive(image, file_name, mimetype)
+            
+            return Response({
+                'success': True,
+                'message': 'Image uploaded successfully',
+                'link': link
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.exception('Image upload to Drive failed')
+            return Response({
+                'success': False,
+                'message': 'Failed to upload image'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

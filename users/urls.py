@@ -20,6 +20,9 @@ from .api.views import (
     # Contact Query
     , ContactQueryCreateView, ContactQueryListView, ContactQueryDeleteView
     
+    # Image Upload
+    , UploadImageToDriveView
+    
 )
 
 app_name = 'users'
@@ -56,6 +59,9 @@ urlpatterns = [
     path('contact/', ContactQueryCreateView.as_view(), name='contact_create'),
     path('contact/queries/', ContactQueryListView.as_view(), name='contact_list'),
     path('contact/queries/<int:query_id>/delete/', ContactQueryDeleteView.as_view(), name='contact_delete'),
+    
+    # IMAGE UPLOAD ENDPOINT
+    path('upload-image/', UploadImageToDriveView.as_view(), name='upload_image'),
     
     # OAuth endpoints used by frontend
     path('auth/oauth/callback/', csrf_exempt(OAuthCallbackView.as_view()), name='oauth_callback'),

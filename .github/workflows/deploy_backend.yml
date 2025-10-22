@@ -66,10 +66,16 @@ jobs:
             WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}
             PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}
 
+            # cloudinary
+            CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}
+            CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }}
+            CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }}
+
             # Shiprocket
             SHIPROCKET_API_EMAIL=${{ secrets.SHIPROCKET_API_EMAIL }}
             SHIPROCKET_API_PASSWORD=${{ secrets.SHIPROCKET_API_PASSWORD }}
             EOF
+
 
             echo "⚙ back to main folder ..."
             cd ..
